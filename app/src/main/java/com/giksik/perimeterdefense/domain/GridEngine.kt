@@ -4,7 +4,7 @@ import kotlin.random.Random
 
 object GridEngine {
     const val GRID_SIZE = 6
-    const val MAX_MINES = 7
+    const val MAX_MINES = 5
     private const val MINE_CHANCE = 0.16
 
     private val directions = listOf(
@@ -26,7 +26,12 @@ object GridEngine {
                         row = row,
                         col = col,
                         state = CellState.REVEALED,
-                        ammoColor = randomAmmo(random)
+                        // A fixed 2×3 opening pattern guarantees a legal first Match-3 swipe.
+                        ammoColor = when {
+                            (row == 2 && col in 2..4) -> if (col == 3) AmmoColor.BLUE else AmmoColor.RED
+                            (row == 3 && col in 2..4) -> if (col == 3) AmmoColor.RED else AmmoColor.BLUE
+                            else -> randomAmmo(random)
+                        }
                     )
                 } else {
                     GridCell(row = row, col = col, hasMine = mine)
