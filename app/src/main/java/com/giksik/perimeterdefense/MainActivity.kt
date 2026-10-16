@@ -176,23 +176,16 @@ private fun PerimeterGame() {
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = when {
-                                    cell.state == CellState.HIDDEN -> "⬡"
-                                    cell.hasMine -> "✹"
-                                    cell.adjacentMines > 0 -> cell.adjacentMines.toString()
-                                    cell.ammoColor == AmmoColor.GREEN_HEAL -> "+"
-                                    else -> when (cell.ammoColor) {
-                                        AmmoColor.RED -> "R"
-                                        AmmoColor.BLUE -> "B"
-                                        AmmoColor.YELLOW -> "Y"
-                                        else -> "·"
-                                    }
-                                },
-                                color = if (cell.state == CellState.HIDDEN) Color(0xFF65DDF0) else Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 14.sp
-                            )
+                            if (cell.state == CellState.REVEALED && !cell.hasMine && cell.adjacentMines > 0) {
+                                Text(
+                                    text = cell.adjacentMines.toString(),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 15.sp
+                                )
+                            } else {
+                                NeonTileGlyph(cell = cell, modifier = Modifier.fillMaxSize().padding(3.dp))
+                            }
                         }
                     }
                 }
@@ -206,12 +199,12 @@ private fun PerimeterGame() {
                 onClick = { mode = InteractionMode.DRILL_REVEAL },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = if (mode == InteractionMode.DRILL_REVEAL) Neon else SurfaceDark)
-            ) { Text("БУР", color = Color.White, fontWeight = FontWeight.Bold) }
+            ) { Text("⌖  БУР", color = Color(0xFF06131D), fontWeight = FontWeight.Black) }
             Button(
                 onClick = { mode = InteractionMode.FLAG_CAPTURE },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = if (mode == InteractionMode.FLAG_CAPTURE) Color(0xFF238636) else SurfaceDark)
-            ) { Text("ЗАХВАТ", color = Color.White, fontWeight = FontWeight.Bold) }
+            ) { Text("⬡  ЗАХВАТ", color = Color.White, fontWeight = FontWeight.Black) }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -261,7 +254,7 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUn
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("ТАКТИЧЕСКИЙ РАДАР", color = Neon, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("◉  TACTICAL SENSOR ARRAY", color = Neon, fontSize = 11.sp, fontWeight = FontWeight.Black)
             Text("ХОД $turns", color = Color.LightGray, fontSize = 10.sp)
         }
         Box(
@@ -306,13 +299,13 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUn
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("ЩИТ ПЕРИМЕТРА", color = Color.LightGray, fontSize = 10.sp)
+            Text("BASE SHIELD", color = Color(0xFF9CB8C8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Text("$baseHp / 100 HP", color = if (baseHp > 30) Color(0xFF3FB950) else Color(0xFFF85149), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
         Box(modifier = Modifier.fillMaxWidth().fillMaxWidth().height(6.dp).background(BorderDark, RoundedCornerShape(4.dp))) {
             Box(modifier = Modifier.fillMaxWidth(baseHp / 100f).size(height = 6.dp, width = 1.dp).background(Color(0xFF3FB950), RoundedCornerShape(4.dp)))
         }
-        Text("ВРАГОВ: ${enemies.size}", color = Color.LightGray, fontSize = 9.sp)
+        Text("HOSTILES DETECTED  /  ${enemies.size}", color = if (enemies.isEmpty()) Color(0xFF5CFFB0) else Color(0xFFFF667A), fontSize = 9.sp, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
             Text("◆  MORTAR", color = Color(0xFFFF667A), fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Text("◆  CRYO", color = Color(0xFF45D9FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
@@ -334,7 +327,7 @@ private fun Booster(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(title, color = Color.LightGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = Color(0xFFB8D4E4), fontSize = 9.sp, fontWeight = FontWeight.Black)
         Text(badge, color = Neon, fontSize = 11.sp, fontWeight = FontWeight.Black)
     }
 }
