@@ -17,6 +17,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -26,14 +29,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 import com.giksik.perimeterdefense.domain.CombatEvent
 import com.giksik.perimeterdefense.domain.CombatEventType
 import com.giksik.perimeterdefense.domain.CombatEngine
+import com.giksik.perimeterdefense.domain.AmmoColor
 import com.giksik.perimeterdefense.domain.EnemyType
 import com.giksik.perimeterdefense.domain.EnemyUnit
 import kotlinx.coroutines.flow.collect
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.cos
 
 private val SceneCyan = Color(0xFF39E8FF)
 private val SceneRed = Color(0xFFFF526E)
@@ -48,6 +56,7 @@ private val SceneGreen = Color(0xFF5CFFB0)
 internal fun TacticalBattlefield(
     enemies: List<EnemyUnit>,
     baseHp: Int,
+    turretStunTurns: Int,
     turn: Int,
     effectEvents: List<CombatEvent>,
     effectTargets: List<EnemyUnit>,
@@ -64,7 +73,8 @@ internal fun TacticalBattlefield(
         ),
         label = "scan-sweep"
     )
-    val impact = remember { Animatable(1f) }
+    var vfxStartNanos by remember { mutableLongStateOf(0L) }
+    var vfxFrameNanos by remember { mutableLongStateOf(0L) }
     LaunchedEffect(effectKey) {
         val hasCombatFx = effectEvents.any {
             it.type == CombatEventType.ENEMY_DAMAGED ||
@@ -73,12 +83,25 @@ internal fun TacticalBattlefield(
                 it.type == CombatEventType.BASE_REPAIRED ||
                 it.type == CombatEventType.TURRETS_STUNNED
         }
-        if (hasCombatFx) {
-            impact.snapTo(0f)
-            impact.animateTo(1f, animationSpec = tween(durationMillis = 680, easing = LinearEasing))
+        if (!hasCombatFx) return@LaunchedEffect
+
+        val start = withFrameNanos { it }
+        vfxStartNanos = start
+        vfxFrameNanos = start
+        var now = start
+        val durationNanos = 680_000_000L
+        while (now - start < durationNanos) {
+            vfxFrameNanos = now
+            now = withFrameNanos { it }
         }
+        vfxFrameNanos = start + durationNanos
     }
-    val impactFraction = impact.value
+    val elapsedMs = if (vfxStartNanos > 0L && vfxFrameNanos >= vfxStartNanos) {
+        ((vfxFrameNanos - vfxStartNanos) / 1_000_000f).coerceAtLeast(0f)
+    } else {
+        680f
+    }
+    val impactFraction = (elapsedMs / 680f).coerceIn(0f, 1f)
 
     Box(
         modifier = modifier
@@ -120,9 +143,14 @@ internal fun TacticalBattlefield(
             drawLine(SceneCyan.copy(alpha = 0.08f), Offset(padX, scanY - 7.dp.toPx()), Offset(w - padX, scanY - 7.dp.toPx()), strokeWidth = 10.dp.toPx())
             drawLine(SceneCyan.copy(alpha = 0.78f), Offset(padX, scanY), Offset(w - padX, scanY), strokeWidth = 1.dp.toPx())
 
-            // Turret platforms at the base of the six lanes.
-            for (lane in 0 until GridSize step 2) {
-                val x = padX + laneWidth * (lane + 0.5f)
+            // Three weapon-specific turrets: mortar left, cryo center, Tesla right.
+            val turretSpecs = listOf(
+                Triple(0.18f, SceneRed, AmmoColor.RED),
+                Triple(0.50f, SceneCyan, AmmoColor.BLUE),
+                Triple(0.82f, SceneAmber, AmmoColor.YELLOW)
+            )
+            turretSpecs.forEach { (fractionX, turretColor, _) ->
+                val x = padX + (w - padX * 2f) * fractionX
                 val turretY = h - 7.dp.toPx()
                 drawRoundRect(
                     color = Color(0xFF123747),
@@ -130,29 +158,90 @@ internal fun TacticalBattlefield(
                     size = Size(laneWidth * 0.46f, 8.dp.toPx()),
                     cornerRadius = CornerRadius(2.dp.toPx())
                 )
-                drawLine(SceneCyan.copy(alpha = 0.7f), Offset(x, turretY - 5.dp.toPx()), Offset(x, turretY - 12.dp.toPx()), strokeWidth = 2.dp.toPx())
-                drawCircle(SceneCyan.copy(alpha = 0.8f), radius = 1.5.dp.toPx(), center = Offset(x, turretY - 12.dp.toPx()))
+                drawLine(
+                    turretColor.copy(alpha = if (turretStunTurns > 0) 0.25f else 0.88f),
+                    Offset(x, turretY - 5.dp.toPx()),
+                    Offset(x, turretY - 15.dp.toPx()),
+                    strokeWidth = 2.5.dp.toPx()
+                )
+                drawCircle(
+                    turretColor.copy(alpha = if (turretStunTurns > 0) 0.3f else 0.95f),
+                    radius = 3.dp.toPx(),
+                    center = Offset(x, turretY - 15.dp.toPx())
+                )
+                drawCircle(
+                    Color.White.copy(alpha = if (turretStunTurns > 0) 0.1f else 0.7f),
+                    radius = 1.dp.toPx(),
+                    center = Offset(x, turretY - 15.dp.toPx())
+                )
             }
 
-            // Laser bolts are emitted only for real combat events supplied by the engine.
+            // Real combat damage events create a travelling, double-layer laser.
             val damageEvents = effectEvents.filter { it.type == CombatEventType.ENEMY_DAMAGED }
-            if (impactFraction < 0.82f && damageEvents.isNotEmpty()) {
-                val alpha = (1f - impactFraction / 0.82f).coerceIn(0f, 1f)
-                damageEvents.take(5).forEachIndexed { index, event ->
+            if (elapsedMs < 390f) {
+                damageEvents.take(8).forEachIndexed { index, event ->
                     val target = effectTargets.firstOrNull { it.id == event.enemyId } ?: return@forEachIndexed
-                    val targetX = padX + laneWidth * (target.lane.coerceIn(0, GridSize - 1) + 0.5f)
-                    val targetY = top + fieldH * (target.progress.coerceIn(0, CombatEngine.PATH_LENGTH - 1).toFloat() / CombatEngine.PATH_LENGTH)
-                    val color = when (index % 3) {
-                        0 -> SceneCyan
-                        1 -> Color(0xFFB56BFF)
-                        else -> SceneAmber
+                    val weapon = event.weaponColor ?: when (index % 3) {
+                        0 -> AmmoColor.RED
+                        1 -> AmmoColor.BLUE
+                        else -> AmmoColor.YELLOW
                     }
-                    val sourceX = padX + laneWidth * ((target.lane / 2) * 2 + 0.5f).coerceIn(0f, GridSize - 1f)
-                    val source = Offset(sourceX, h - 20.dp.toPx())
-                    val destination = Offset(targetX, targetY)
-                    drawLine(color.copy(alpha = 0.16f * alpha), source, destination, strokeWidth = 7.dp.toPx())
-                    drawLine(color.copy(alpha = alpha), source, destination, strokeWidth = 1.7.dp.toPx())
-                    drawCircle(Color.White.copy(alpha = 0.8f * alpha), radius = 2.dp.toPx(), center = destination)
+                    val weaponColor = when (weapon) {
+                        AmmoColor.RED -> SceneRed
+                        AmmoColor.BLUE -> SceneCyan
+                        AmmoColor.YELLOW -> SceneAmber
+                        AmmoColor.GREEN_HEAL -> SceneGreen
+                        AmmoColor.NONE -> SceneCyan
+                    }
+                    val sourceFraction = when (weapon) {
+                        AmmoColor.RED -> 0.18f
+                        AmmoColor.BLUE -> 0.50f
+                        AmmoColor.YELLOW -> 0.82f
+                        AmmoColor.GREEN_HEAL, AmmoColor.NONE -> 0.50f
+                    }
+                    val source = Offset(
+                        padX + (w - padX * 2f) * sourceFraction,
+                        h - 18.dp.toPx()
+                    )
+                    val destination = Offset(
+                        padX + laneWidth * (target.lane.coerceIn(0, GridSize - 1) + 0.5f),
+                        top + fieldH * (target.progress.coerceIn(0, CombatEngine.PATH_LENGTH - 1).toFloat() / CombatEngine.PATH_LENGTH)
+                    )
+                    val beamProgress = (elapsedMs / 245f).coerceIn(0f, 1f)
+                    val endpoint = Offset(
+                        source.x + (destination.x - source.x) * beamProgress,
+                        source.y + (destination.y - source.y) * beamProgress
+                    )
+                    val alpha = (1f - elapsedMs / 390f).coerceIn(0f, 1f)
+
+                    if (weapon == AmmoColor.YELLOW) {
+                        // Tesla discharge zig-zags rather than behaving like a straight laser.
+                        val path = Path().apply {
+                            moveTo(source.x, source.y)
+                            val dx = endpoint.x - source.x
+                            val dy = endpoint.y - source.y
+                            val length = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                            val perpX = -dy / length
+                            val perpY = dx / length
+                            for (step in 1..5) {
+                                val t = step / 6f
+                                val offset = if (step % 2 == 0) -1f else 1f
+                                lineTo(
+                                    source.x + dx * t + perpX * 5.dp.toPx() * offset,
+                                    source.y + dy * t + perpY * 5.dp.toPx() * offset
+                                )
+                            }
+                            lineTo(endpoint.x, endpoint.y)
+                        }
+                        drawPath(path, weaponColor.copy(alpha = 0.22f * alpha), style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round))
+                        drawPath(path, weaponColor.copy(alpha = 0.92f * alpha), style = Stroke(width = 2.8.dp.toPx(), cap = StrokeCap.Round))
+                        drawPath(path, Color.White.copy(alpha = 0.95f * alpha), style = Stroke(width = 0.85.dp.toPx(), cap = StrokeCap.Round))
+                    } else {
+                        drawLine(weaponColor.copy(alpha = 0.20f * alpha), source, endpoint, strokeWidth = 8.dp.toPx(), cap = StrokeCap.Round)
+                        drawLine(weaponColor.copy(alpha = 0.95f * alpha), source, endpoint, strokeWidth = 2.8.dp.toPx(), cap = StrokeCap.Round)
+                        drawLine(Color.White.copy(alpha = 0.95f * alpha), source, endpoint, strokeWidth = 0.85.dp.toPx(), cap = StrokeCap.Round)
+                    }
+                    drawCircle(Color.White.copy(alpha = alpha), radius = 2.2.dp.toPx(), center = endpoint)
                 }
             }
 
@@ -172,42 +261,73 @@ internal fun TacticalBattlefield(
                 )
             }
 
-            // Impact rings mark targets which took damage; destroyed units get a larger burst.
-            if (impactFraction < 1f) {
-                val alpha = (1f - impactFraction).coerceIn(0f, 1f)
-                effectEvents.filter { it.type == CombatEventType.ENEMY_DESTROYED }.forEach { event ->
+            // Expanding impact rings and exactly eight sparks at each hit point.
+            if (elapsedMs < 560f) {
+                val lifetime = (elapsedMs / 560f).coerceIn(0f, 1f)
+                val alpha = (1f - lifetime).coerceIn(0f, 1f)
+                val destroyedIds = effectEvents
+                    .filter { it.type == CombatEventType.ENEMY_DESTROYED }
+                    .mapNotNull { it.enemyId }
+                    .toSet()
+                val hitEvents = effectEvents.filter {
+                    it.type == CombatEventType.ENEMY_DESTROYED ||
+                        (it.type == CombatEventType.ENEMY_DAMAGED && it.enemyId !in destroyedIds)
+                }
+                hitEvents.take(8).forEachIndexed { eventIndex, event ->
                     val target = effectTargets.firstOrNull { it.id == event.enemyId }
                     if (target != null) {
                         val center = Offset(
                             padX + laneWidth * (target.lane.coerceIn(0, GridSize - 1) + 0.5f),
                             top + fieldH * (target.progress.coerceIn(0, CombatEngine.PATH_LENGTH - 1).toFloat() / CombatEngine.PATH_LENGTH)
                         )
-                        val radius = (5.dp.toPx() + 23.dp.toPx() * impactFraction)
-                        drawCircle(SceneAmber.copy(alpha = alpha * 0.8f), radius = radius, center = center, style = Stroke(width = 1.5.dp.toPx()))
-                        drawCircle(SceneRed.copy(alpha = alpha * 0.65f), radius = radius * 0.55f, center = center, style = Stroke(width = 1.dp.toPx()))
-                        for (ray in 0 until 8) {
-                            val angle = Math.PI * ray / 4.0
-                            val inner = radius * 0.65f
-                            val outer = radius * 1.05f
-                            drawLine(
-                                SceneAmber.copy(alpha = alpha),
-                                Offset(center.x + (kotlin.math.cos(angle) * inner).toFloat(), center.y + (kotlin.math.sin(angle) * inner).toFloat()),
-                                Offset(center.x + (kotlin.math.cos(angle) * outer).toFloat(), center.y + (kotlin.math.sin(angle) * outer).toFloat()),
-                                strokeWidth = 1.3.dp.toPx()
+                        val color = when (event.weaponColor) {
+                            AmmoColor.RED -> SceneRed
+                            AmmoColor.BLUE -> SceneCyan
+                            AmmoColor.YELLOW -> SceneAmber
+                            AmmoColor.GREEN_HEAL -> SceneGreen
+                            else -> if (event.type == CombatEventType.ENEMY_DESTROYED) SceneAmber else SceneRed
+                        }
+                        val maxRadius = if (event.type == CombatEventType.ENEMY_DESTROYED) 27.dp.toPx() else 17.dp.toPx()
+                        val radius = maxRadius * (0.15f + lifetime * 0.85f)
+                        drawCircle(color.copy(alpha = alpha * 0.78f), radius = radius, center = center, style = Stroke(width = 2.dp.toPx()))
+                        drawCircle(color.copy(alpha = alpha * 0.22f), radius = radius * 0.62f, center = center)
+                        drawCircle(Color.White.copy(alpha = alpha * 0.88f), radius = maxRadius * 0.17f * (1f - lifetime), center = center)
+                        for (spark in 0 until 8) {
+                            val angle = (PI * 2.0 * spark / 8.0) + eventIndex * 0.31
+                            val inner = radius * 0.42f
+                            val outer = radius * (0.88f + 0.2f * sin(lifetime * 5f + spark))
+                            val start = Offset(
+                                center.x + (cos(angle) * inner).toFloat(),
+                                center.y + (sin(angle) * inner).toFloat()
                             )
+                            val finish = Offset(
+                                center.x + (cos(angle) * outer).toFloat(),
+                                center.y + (sin(angle) * outer).toFloat()
+                            )
+                            drawLine(color.copy(alpha = alpha), start, finish, strokeWidth = 1.6.dp.toPx(), cap = StrokeCap.Round)
                         }
                     }
                 }
 
                 if (effectEvents.any { it.type == CombatEventType.BASE_DAMAGED || it.type == CombatEventType.TURRETS_STUNNED }) {
-                    val center = Offset(w * 0.5f, h - 9.dp.toPx())
-                    val radius = 4.dp.toPx() + 17.dp.toPx() * impactFraction
-                    drawCircle(SceneRed.copy(alpha = alpha * 0.7f), radius = radius, center = center, style = Stroke(width = 2.dp.toPx()))
+                    val center = Offset(w * 0.5f, h - 13.dp.toPx())
+                    val radius = 4.dp.toPx() + 19.dp.toPx() * lifetime
+                    drawCircle(SceneRed.copy(alpha = alpha * 0.8f), radius = radius, center = center, style = Stroke(width = 2.dp.toPx()))
                     drawCircle(SceneRed.copy(alpha = alpha * 0.3f), radius = radius * 1.5f, center = center, style = Stroke(width = 1.dp.toPx()))
+                    for (spark in 0 until 8) {
+                        val angle = PI * 2.0 * spark / 8.0
+                        drawLine(
+                            SceneAmber.copy(alpha = alpha),
+                            Offset(center.x + (cos(angle) * radius * 0.4f).toFloat(), center.y + (sin(angle) * radius * 0.4f).toFloat()),
+                            Offset(center.x + (cos(angle) * radius * 1.1f).toFloat(), center.y + (sin(angle) * radius * 1.1f).toFloat()),
+                            strokeWidth = 1.4.dp.toPx(),
+                            cap = StrokeCap.Round
+                        )
+                    }
                 }
                 if (effectEvents.any { it.type == CombatEventType.BASE_REPAIRED }) {
-                    val center = Offset(w * 0.5f, h - 9.dp.toPx())
-                    drawCircle(SceneGreen.copy(alpha = alpha * 0.65f), radius = 4.dp.toPx() + 17.dp.toPx() * impactFraction, center = center, style = Stroke(width = 2.dp.toPx()))
+                    val center = Offset(w * 0.5f, h - 13.dp.toPx())
+                    drawCircle(SceneGreen.copy(alpha = alpha * 0.7f), radius = 4.dp.toPx() + 17.dp.toPx() * lifetime, center = center, style = Stroke(width = 2.dp.toPx()))
                 }
             }
 
