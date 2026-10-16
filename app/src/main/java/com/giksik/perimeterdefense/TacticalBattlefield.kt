@@ -400,6 +400,32 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEnemyRobot(
         cornerRadius = CornerRadius(1.dp.toPx())
     )
     drawLine(SceneCyan, Offset(centerX - headSize * 0.26f, centerY - radius * 0.55f), Offset(centerX + headSize * 0.26f, centerY - radius * 0.55f), strokeWidth = 1.4.dp.toPx())
+
+    // Armored units and bosses receive visible segmented chest plates and rivets.
+    if (type == EnemyType.ARMORED || type == EnemyType.BOSS) {
+        val plateWidth = bodySize.width * 0.28f
+        val plateHeight = bodySize.height * 0.38f
+        for (plate in 0..2) {
+            val px = centerX - bodySize.width * 0.42f + plate * (plateWidth + 1.dp.toPx())
+            drawRoundRect(
+                color = Color(0xFFD9E5F0).copy(alpha = 0.62f),
+                topLeft = Offset(px, centerY + bodySize.height * 0.08f),
+                size = Size(plateWidth, plateHeight),
+                cornerRadius = CornerRadius(1.dp.toPx())
+            )
+            drawCircle(
+                color = SceneCyan.copy(alpha = 0.8f),
+                radius = 0.65.dp.toPx(),
+                center = Offset(px + plateWidth * 0.5f, centerY + bodySize.height * 0.22f)
+            )
+        }
+        drawLine(
+            if (type == EnemyType.BOSS) SceneAmber else SceneCyan,
+            Offset(centerX - bodySize.width * 0.45f, centerY + bodySize.height * 0.58f),
+            Offset(centerX + bodySize.width * 0.45f, centerY + bodySize.height * 0.58f),
+            strokeWidth = 1.dp.toPx()
+        )
+    }
     drawLine(hull, Offset(centerX - radius * 0.4f, centerY + radius * 0.5f), Offset(centerX - radius * 0.58f, centerY + radius * 0.9f), strokeWidth = 1.1.dp.toPx())
     drawLine(hull, Offset(centerX + radius * 0.4f, centerY + radius * 0.5f), Offset(centerX + radius * 0.58f, centerY + radius * 0.9f), strokeWidth = 1.1.dp.toPx())
     drawLine(hull, Offset(centerX - radius * 0.68f, centerY + radius * 0.02f), Offset(centerX - radius * 1.05f, centerY + radius * 0.25f), strokeWidth = 1.2.dp.toPx())
