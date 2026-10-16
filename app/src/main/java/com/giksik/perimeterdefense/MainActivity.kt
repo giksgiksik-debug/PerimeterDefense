@@ -527,6 +527,7 @@ private fun RadarPanel(
         TacticalBattlefield(
             enemies = enemies,
             baseHp = baseHp,
+            turretStunTurns = stun,
             turn = turns,
             effectEvents = effectEvents,
             effectTargets = effectTargets,
