@@ -176,7 +176,7 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int) {
             Text("ХОД $turns", color = Color.LightGray, fontSize = 10.sp)
         }
         Box(
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).size(height = 70.dp, width = 1.dp)
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).fillMaxWidth().height(70.dp)
                 .background(Color(0xFF0B171D), RoundedCornerShape(6.dp))
                 .border(1.dp, Color(0xFF1F6B55), RoundedCornerShape(6.dp)),
             contentAlignment = Alignment.Center
@@ -187,7 +187,7 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int) {
             Text("ЩИТ ПЕРИМЕТРА", color = Color.LightGray, fontSize = 10.sp)
             Text("$baseHp / 100 HP", color = if (baseHp > 30) Color(0xFF3FB950) else Color(0xFFF85149), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
-        Box(modifier = Modifier.fillMaxWidth().size(height = 6.dp, width = 1.dp).background(BorderDark, RoundedCornerShape(4.dp))) {
+        Box(modifier = Modifier.fillMaxWidth().fillMaxWidth().height(6.dp).background(BorderDark, RoundedCornerShape(4.dp))) {
             Box(modifier = Modifier.fillMaxWidth(baseHp / 100f).size(height = 6.dp, width = 1.dp).background(Color(0xFF3FB950), RoundedCornerShape(4.dp)))
         }
         Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
