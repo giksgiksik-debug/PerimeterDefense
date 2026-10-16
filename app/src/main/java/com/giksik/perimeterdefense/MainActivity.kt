@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+import kotlin.math.floor
 import com.giksik.perimeterdefense.data.GamePersistence
 import com.giksik.perimeterdefense.data.SavedGame
 import com.giksik.perimeterdefense.domain.AmmoColor
@@ -199,172 +200,222 @@ private fun PerimeterGame() {
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = maxHeight < 820.dp
-        val matrixSize = minOf(maxWidth - 20.dp, maxHeight - 450.dp).coerceAtLeast(230.dp)
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 10.dp),
             verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 10.dp)
         ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Column {
-                Text("PERIMETER // DEFENSE", color = Neon, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                Text("TACTICAL NETWORK ONLINE  •  WAVE %02d  •  CR %04d".format(combat.wave, combat.chips), color = Color(0xFF9CB8C8), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Text("Ⅱ", color = Color.White, fontSize = 24.sp)
-        }
-
-        RadarPanel(
-            baseHp = combat.baseHp,
-            stun = combat.turretStunTurns,
-            turns = combat.turn,
-            enemies = combat.enemies,
-            effectEvents = visualEvents,
-            effectTargets = visualTargets,
-            effectKey = visualEffectKey,
-            compact = compact
-        )
-
-        Text(
-            "ENERGY MATRIX  //  6 × 6  •  СВАЙП 3+",
-            color = Neon,
-            fontSize = if (compact) 10.sp else 12.sp,
-            fontWeight = FontWeight.Black,
-            maxLines = 1
-        )
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Column(
-                modifier = Modifier.width(matrixSize).background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(6.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
             ) {
-            grid.forEachIndexed { rowIndex, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    row.forEachIndexed { colIndex, cell ->
-                        val tileColor = when {
-                            cell.state == CellState.HIDDEN -> Color(0xFF252D38)
-                            cell.hasMine -> Color(0xFF6E2630)
-                            else -> when (cell.ammoColor) {
-                                AmmoColor.RED -> Color(0xFFE5534B)
-                                AmmoColor.BLUE -> Color(0xFF388BFD)
-                                AmmoColor.YELLOW -> Color(0xFFD29922)
-                                AmmoColor.GREEN_HEAL -> Color(0xFF3FB950)
-                                AmmoColor.NONE -> Color(0xFF30363D)
+                Column {
+                    Text("PERIMETER // DEFENSE", color = Neon, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        "TACTICAL NETWORK ONLINE  •  WAVE %02d  •  CR %04d".format(combat.wave, combat.chips),
+                        color = Color(0xFF9CB8C8), fontSize = 9.sp, fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Text("Ⅱ", color = Color.White, fontSize = 24.sp)
+            }
+
+            RadarPanel(
+                baseHp = combat.baseHp,
+                stun = combat.turretStunTurns,
+                turns = combat.turn,
+                enemies = combat.enemies,
+                effectEvents = visualEvents,
+                effectTargets = visualTargets,
+                effectKey = visualEffectKey,
+                compact = compact
+            )
+
+            Text(
+                "ENERGY MATRIX  //  6 × 6  •  СВАЙП 3+",
+                color = Neon,
+                fontSize = if (compact) 10.sp else 12.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1
+            )
+
+            // Board takes only the space left between radar and the fixed bottom controls.
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                val matrixSize = minOf(maxWidth - 4.dp, maxHeight - 2.dp).coerceAtLeast(160.dp)
+                Box(
+                    modifier = Modifier.size(matrixSize)
+                        .pointerInput(grid, mode) {
+                            val boardWidthPx = size.width.toFloat()
+                            val boardHeightPx = size.height.toFloat()
+                            val insetPx = 6.dp.toPx()
+                            val gapPx = 5.dp.toPx()
+                            val tileWidthPx = ((boardWidthPx - insetPx * 2f - gapPx * 5f) / 6f).coerceAtLeast(1f)
+                            val tileHeightPx = ((boardHeightPx - insetPx * 2f - gapPx * 5f) / 6f).coerceAtLeast(1f)
+
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var endPosition = down.position
+                                var stillPressed = true
+                                var cancelled = false
+                                while (stillPressed) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change == null) {
+                                        cancelled = true
+                                        break
+                                    }
+                                    endPosition = change.position
+                                    stillPressed = change.pressed
+                                    change.consume()
+                                }
+
+                                if (!cancelled) {
+                                    fun columnAt(x: Float): Int =
+                                        floor((x - insetPx) / (tileWidthPx + gapPx)).toInt().coerceIn(0, 5)
+                                    fun rowAt(y: Float): Int =
+                                        floor((y - insetPx) / (tileHeightPx + gapPx)).toInt().coerceIn(0, 5)
+
+                                    val startRow = rowAt(down.position.y)
+                                    val startCol = columnAt(down.position.x)
+                                    val dx = endPosition.x - down.position.x
+                                    val dy = endPosition.y - down.position.y
+                                    val threshold = 14.dp.toPx()
+
+                                    if (maxOf(abs(dx), abs(dy)) >= threshold) {
+                                        if (abs(dx) >= abs(dy)) {
+                                            handleSwipe(startRow, startCol, startRow, startCol + if (dx > 0) 1 else -1)
+                                        } else {
+                                            handleSwipe(startRow, startCol, startRow + if (dy > 0) 1 else -1, startCol)
+                                        }
+                                    } else {
+                                        handleCellTap(startRow, startCol)
+                                    }
+                                }
                             }
                         }
-                        Box(
-                            modifier = Modifier.weight(1f).aspectRatio(1f)
-                                .background(Brush.radialGradient(colors = listOf(tileColor.copy(alpha = 0.98f), tileColor.copy(alpha = 0.52f))), RoundedCornerShape(5.dp))
-                                .border(1.dp, if (cell.state == CellState.HIDDEN) Color(0xFF1C718A) else tileColor.copy(alpha = 0.92f), RoundedCornerShape(5.dp))
-                                .pointerInput(grid, mode, rowIndex, colIndex) {
-                                    awaitEachGesture {
-                                        val down = awaitFirstDown(requireUnconsumed = false)
-                                        var endPosition = down.position
-                                        var stillPressed = true
-                                        var cancelled = false
-                                        while (stillPressed) {
-                                            val event = awaitPointerEvent()
-                                            val change = event.changes.firstOrNull { it.id == down.id }
-                                            if (change == null) {
-                                                cancelled = true
-                                                break
-                                            }
-                                            endPosition = change.position
-                                            stillPressed = change.pressed
-                                            change.consume()
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                            .background(SurfaceDark, RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp))
+                            .padding(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        grid.forEach { row ->
+                            Row(
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                row.forEach { cell ->
+                                    val tileColor = when {
+                                        cell.state == CellState.HIDDEN -> Color(0xFF252D38)
+                                        cell.hasMine -> Color(0xFF6E2630)
+                                        else -> when (cell.ammoColor) {
+                                            AmmoColor.RED -> Color(0xFFE5534B)
+                                            AmmoColor.BLUE -> Color(0xFF388BFD)
+                                            AmmoColor.YELLOW -> Color(0xFFD29922)
+                                            AmmoColor.GREEN_HEAL -> Color(0xFF3FB950)
+                                            AmmoColor.NONE -> Color(0xFF30363D)
                                         }
-                                        if (!cancelled) {
-                                            val dx = endPosition.x - down.position.x
-                                            val dy = endPosition.y - down.position.y
-                                            val swipeThreshold = 18.dp.toPx()
-                                            if (maxOf(abs(dx), abs(dy)) >= swipeThreshold) {
-                                                if (abs(dx) >= abs(dy)) {
-                                                    handleSwipe(
-                                                        rowIndex, colIndex,
-                                                        rowIndex, colIndex + if (dx > 0) 1 else -1
+                                    }
+                                    Box(
+                                        modifier = Modifier.weight(1f).fillMaxSize()
+                                            .background(
+                                                Brush.radialGradient(
+                                                    colors = listOf(
+                                                        tileColor.copy(alpha = 0.98f),
+                                                        tileColor.copy(alpha = 0.52f)
                                                     )
-                                                } else {
-                                                    handleSwipe(
-                                                        rowIndex, colIndex,
-                                                        rowIndex + if (dy > 0) 1 else -1, colIndex
-                                                    )
-                                                }
-                                            } else {
-                                                handleCellTap(rowIndex, colIndex)
+                                                ),
+                                                RoundedCornerShape(5.dp)
+                                            )
+                                            .border(
+                                                1.dp,
+                                                if (cell.state == CellState.HIDDEN) Color(0xFF1C718A)
+                                                else tileColor.copy(alpha = 0.92f),
+                                                RoundedCornerShape(5.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        NeonTileGlyph(cell = cell, modifier = Modifier.fillMaxSize().padding(3.dp))
+                                        if (cell.state == CellState.REVEALED && !cell.hasMine && cell.adjacentMines > 0) {
+                                            Box(
+                                                modifier = Modifier.align(Alignment.TopEnd)
+                                                    .padding(3.dp)
+                                                    .background(Color(0xDD07111C), RoundedCornerShape(4.dp))
+                                                    .border(1.dp, BorderDark, RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 3.dp, vertical = 0.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = cell.adjacentMines.toString(),
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Black,
+                                                    fontSize = 8.sp
+                                                )
                                             }
                                         }
                                     }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            NeonTileGlyph(cell = cell, modifier = Modifier.fillMaxSize().padding(3.dp))
-                            if (cell.state == CellState.REVEALED && !cell.hasMine && cell.adjacentMines > 0) {
-                                Box(
-                                    modifier = Modifier.align(Alignment.TopEnd)
-                                        .padding(3.dp)
-                                        .background(Color(0xDD07111C), RoundedCornerShape(4.dp))
-                                        .border(1.dp, BorderDark, RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 3.dp, vertical = 0.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = cell.adjacentMines.toString(),
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 8.sp
-                                    )
                                 }
                             }
                         }
                     }
                 }
             }
-        }
-        }
 
-        Text(status, color = Color(0xFFB1BAC4), fontSize = if (compact) 9.sp else 11.sp, maxLines = 2)
+            Text(status, color = Color(0xFFB1BAC4), fontSize = if (compact) 9.sp else 11.sp, maxLines = 2)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = { mode = InteractionMode.DRILL_REVEAL },
-                modifier = Modifier.weight(1f).height(if (compact) 36.dp else 44.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = if (mode == InteractionMode.DRILL_REVEAL) Neon else SurfaceDark)
-            ) { Text("⌖  БУР", color = Color(0xFF06131D), fontWeight = FontWeight.Black) }
-            Button(
-                onClick = { mode = InteractionMode.FLAG_CAPTURE },
-                modifier = Modifier.weight(1f).height(if (compact) 36.dp else 44.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = if (mode == InteractionMode.FLAG_CAPTURE) Color(0xFF238636) else SurfaceDark)
-            ) { Text("⬡  ЗАХВАТ", color = Color.White, fontWeight = FontWeight.Black) }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Booster("СКАНЕР", "SCAN", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
-                val mines = grid.flatten().count { it.hasMine }
-                status = "СКАНЕР: мин на поле — $mines; целей на радаре — ${combat.enemies.size}."
+            // Control rows remain outside the weighted board viewport and stay on screen.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { mode = InteractionMode.DRILL_REVEAL },
+                    modifier = Modifier.weight(1f).height(if (compact) 36.dp else 44.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (mode == InteractionMode.DRILL_REVEAL) Neon else SurfaceDark
+                    )
+                ) { Text("⌖  БУР", color = Color(0xFF06131D), fontWeight = FontWeight.Black) }
+                Button(
+                    onClick = { mode = InteractionMode.FLAG_CAPTURE },
+                    modifier = Modifier.weight(1f).height(if (compact) 36.dp else 44.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (mode == InteractionMode.FLAG_CAPTURE) Color(0xFF238636) else SurfaceDark
+                    )
+                ) { Text("⬡  ЗАХВАТ", color = Color.White, fontWeight = FontWeight.Black) }
             }
-            Booster("АВИАУДАР", "18 DMG", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
-                val result = CombatEngine.launchAirstrike(combat)
-                if (result.events.isNotEmpty()) {
-                    visualEvents = result.events
-                    val targetIds = result.events.mapNotNull { it.enemyId }.toSet()
-                    visualTargets = combat.enemies.filter { it.id in targetIds }
-                    visualEffectKey += 1
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Booster("СКАНЕР", "SCAN", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
+                    val mines = grid.flatten().count { it.hasMine }
+                    status = "СКАНЕР: мин на поле — " + mines + "; целей на радаре — " + combat.enemies.size + "."
                 }
-                combat = CombatEngine.advanceTurn(result.state).state
-                val damaged = result.events.count { it.type == CombatEventType.ENEMY_DAMAGED }
-                val destroyed = result.events.count { it.type == CombatEventType.ENEMY_DESTROYED }
-                status = if (damaged == 0) "Авиаудар: целей нет." else "Авиаудар: поражено целей — $damaged, уничтожено — $destroyed."
-            }
-            Booster("РЕМОНТ", "+15 HP", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
-                val result = CombatEngine.repairBase(combat)
-                if (result.events.isNotEmpty()) {
-                    visualEvents = result.events
-                    visualTargets = emptyList()
-                    visualEffectKey += 1
+                Booster("АВИАУДАР", "18 DMG", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
+                    val result = CombatEngine.launchAirstrike(combat)
+                    if (result.events.isNotEmpty()) {
+                        visualEvents = result.events
+                        val targetIds = result.events.mapNotNull { it.enemyId }.toSet()
+                        visualTargets = combat.enemies.filter { it.id in targetIds }
+                        visualEffectKey += 1
+                    }
+                    combat = CombatEngine.advanceTurn(result.state).state
+                    val damaged = result.events.count { it.type == CombatEventType.ENEMY_DAMAGED }
+                    val destroyed = result.events.count { it.type == CombatEventType.ENEMY_DESTROYED }
+                    status = if (damaged == 0) "Авиаудар: целей нет." else "Авиаудар: поражено целей — $damaged, уничтожено — $destroyed."
                 }
-                combat = CombatEngine.advanceTurn(result.state).state
-                val repaired = result.events.filter { it.type == CombatEventType.BASE_REPAIRED }.sumOf { it.amount }
-                status = if (repaired == 0) "Ремонт: щит уже полон." else "Ремонт: восстановлено $repaired HP."
+                Booster("РЕМОНТ", "+15 HP", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
+                    val result = CombatEngine.repairBase(combat)
+                    if (result.events.isNotEmpty()) {
+                        visualEvents = result.events
+                        visualTargets = emptyList()
+                        visualEffectKey += 1
+                    }
+                    combat = CombatEngine.advanceTurn(result.state).state
+                    val repaired = result.events.filter { it.type == CombatEventType.BASE_REPAIRED }.sumOf { it.amount }
+                    status = if (repaired == 0) "Ремонт: щит уже полон." else "Ремонт: восстановлено $repaired HP."
+                }
             }
         }
-    }
     }
 
     if (combat.isGameOver) {
