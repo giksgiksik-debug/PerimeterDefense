@@ -184,4 +184,25 @@ class GridEngineTest {
         assertEquals(grid, result.grid)
     }
 
+
+    @Test
+    fun newGameAlwaysStartsWithAValidMatchThreeSwipe() {
+        val grid = GridEngine.newGrid(Random(123))
+
+        // The central safe area is a red/blue checker pattern:
+        // swapping the two middle cells creates one red row and one blue row.
+        val result = GridEngine.swapAdjacent(grid, 2, 3, 3, 3)
+
+        assertTrue(result.accepted)
+        assertEquals(AmmoColor.RED, result.grid[2][3].ammoColor)
+        assertEquals(AmmoColor.BLUE, result.grid[3][3].ammoColor)
+        assertTrue(
+            GridEngine.findMatchGroups(result.grid).any { it.ammoColor == AmmoColor.RED && it.size >= 3 }
+        )
+        assertTrue(
+            GridEngine.findMatchGroups(result.grid).any { it.ammoColor == AmmoColor.BLUE && it.size >= 3 }
+        )
+    }
+
+
 }
