@@ -42,6 +42,7 @@ import com.giksik.perimeterdefense.data.GamePersistence
 import com.giksik.perimeterdefense.data.SavedGame
 import com.giksik.perimeterdefense.domain.AmmoColor
 import com.giksik.perimeterdefense.domain.CombatEngine
+import com.giksik.perimeterdefense.domain.CombatEvent
 import com.giksik.perimeterdefense.domain.CombatEventType
 import com.giksik.perimeterdefense.domain.CombatState
 import com.giksik.perimeterdefense.domain.EnemyType
@@ -80,6 +81,9 @@ private fun PerimeterGame() {
     var mode by remember { mutableStateOf(InteractionMode.DRILL_REVEAL) }
     var combat by remember { mutableStateOf(CombatEngine.newGame()) }
     var status by remember { mutableStateOf("Периметр стабилен. Выберите плитку.") }
+    var visualEvents by remember { mutableStateOf<List<CombatEvent>>(emptyList()) }
+    var visualTargets by remember { mutableStateOf<List<EnemyUnit>>(emptyList()) }
+    var visualEffectKey by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         val saved = persistence.load()
@@ -107,7 +111,15 @@ private fun PerimeterGame() {
             Text("Ⅱ", color = Color.White, fontSize = 24.sp)
         }
 
-        RadarPanel(baseHp = combat.baseHp, stun = combat.turretStunTurns, turns = combat.turn, enemies = combat.enemies)
+        RadarPanel(
+            baseHp = combat.baseHp,
+            stun = combat.turretStunTurns,
+            turns = combat.turn,
+            enemies = combat.enemies,
+            effectEvents = visualEvents,
+            effectTargets = visualTargets,
+            effectKey = visualEffectKey
+        )
 
         Text("ENERGY MATRIX  //  6 × 6", color = Neon, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Column(
@@ -142,21 +154,49 @@ private fun PerimeterGame() {
                                     status = result.message
                                     if (result.turnConsumed) {
                                         var nextCombat = combat
+                                        val turnVisualEvents = mutableListOf<CombatEvent>()
+                                        val visualCandidates = LinkedHashMap<Long, EnemyUnit>().apply {
+                                            putAll(combat.enemies.associateBy { it.id })
+                                        }
                                         if (result.detonatedMines > 0) {
-                                            nextCombat = CombatEngine.registerMineDetonation(nextCombat).state
+                                            val detonation = CombatEngine.registerMineDetonation(nextCombat)
+                                            nextCombat = detonation.state
+                                            turnVisualEvents += detonation.events
                                         }
                                         if (result.capturedMines > 0) {
                                             nextCombat = nextCombat.copy(chips = nextCombat.chips + result.capturedMines * 25)
                                             repeat(result.capturedMines) {
-                                                nextCombat = CombatEngine.launchCapturedMine(nextCombat).state
+                                                visualCandidates.putAll(nextCombat.enemies.associateBy { it.id })
+                                                val capturedShot = CombatEngine.launchCapturedMine(nextCombat)
+                                                nextCombat = capturedShot.state
+                                                turnVisualEvents += capturedShot.events
                                             }
                                         }
 
                                         val matchResolution = GridEngine.resolveMatches(result.grid)
                                         grid = matchResolution.grid
+                                        visualCandidates.putAll(nextCombat.enemies.associateBy { it.id })
                                         val attackResult = CombatEngine.resolveMatches(nextCombat, matchResolution.groups)
-                                        nextCombat = CombatEngine.advanceTurn(attackResult.state).state
+                                        turnVisualEvents += attackResult.events
+                                        visualCandidates.putAll(attackResult.state.enemies.associateBy { it.id })
+                                        val advanceResult = CombatEngine.advanceTurn(attackResult.state)
+                                        turnVisualEvents += advanceResult.events
+                                        nextCombat = advanceResult.state
                                         combat = nextCombat
+
+                                        val hasVisibleCombatFx = turnVisualEvents.any {
+                                            it.type == CombatEventType.ENEMY_DAMAGED ||
+                                                it.type == CombatEventType.ENEMY_DESTROYED ||
+                                                it.type == CombatEventType.BASE_DAMAGED ||
+                                                it.type == CombatEventType.BASE_REPAIRED ||
+                                                it.type == CombatEventType.TURRETS_STUNNED
+                                        }
+                                        if (hasVisibleCombatFx) {
+                                            visualEvents = turnVisualEvents.toList()
+                                            val targetIds = turnVisualEvents.mapNotNull { it.enemyId }.toSet()
+                                            visualTargets = visualCandidates.values.filter { it.id in targetIds }
+                                            visualEffectKey += 1
+                                        }
 
                                         if (matchResolution.groups.isNotEmpty()) {
                                             val matchedCells = matchResolution.groups.sumOf { it.size }
@@ -214,6 +254,12 @@ private fun PerimeterGame() {
             }
             Booster("АВИАУДАР", "18 DMG", Modifier.weight(1f)) {
                 val result = CombatEngine.launchAirstrike(combat)
+                if (result.events.isNotEmpty()) {
+                    visualEvents = result.events
+                    val targetIds = result.events.mapNotNull { it.enemyId }.toSet()
+                    visualTargets = combat.enemies.filter { it.id in targetIds }
+                    visualEffectKey += 1
+                }
                 combat = CombatEngine.advanceTurn(result.state).state
                 val damaged = result.events.count { it.type == CombatEventType.ENEMY_DAMAGED }
                 val destroyed = result.events.count { it.type == CombatEventType.ENEMY_DESTROYED }
@@ -221,6 +267,11 @@ private fun PerimeterGame() {
             }
             Booster("РЕМОНТ", "+15 HP", Modifier.weight(1f)) {
                 val result = CombatEngine.repairBase(combat)
+                if (result.events.isNotEmpty()) {
+                    visualEvents = result.events
+                    visualTargets = emptyList()
+                    visualEffectKey += 1
+                }
                 combat = CombatEngine.advanceTurn(result.state).state
                 val repaired = result.events.filter { it.type == CombatEventType.BASE_REPAIRED }.sumOf { it.amount }
                 status = if (repaired == 0) "Ремонт: щит уже полон." else "Ремонт: восстановлено $repaired HP."
@@ -248,7 +299,15 @@ private fun PerimeterGame() {
 }
 
 @Composable
-private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUnit>) {
+private fun RadarPanel(
+    baseHp: Int,
+    stun: Int,
+    turns: Int,
+    enemies: List<EnemyUnit>,
+    effectEvents: List<CombatEvent>,
+    effectTargets: List<EnemyUnit>,
+    effectKey: Int
+) {
     Column(
         modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
@@ -257,47 +316,15 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUn
             Text("◉  TACTICAL SENSOR ARRAY", color = Neon, fontSize = 11.sp, fontWeight = FontWeight.Black)
             Text("ХОД $turns", color = Color.LightGray, fontSize = 10.sp)
         }
-        Box(
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).fillMaxWidth().height(70.dp)
-                .background(Brush.radialGradient(colors = listOf(Color(0xFF0C2A35), Color(0xFF07151F))), RoundedCornerShape(6.dp))
-                .border(1.dp, Color(0xFF00AFC6).copy(alpha = 0.62f), RoundedCornerShape(6.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                for (progress in (CombatEngine.PATH_LENGTH - 1) downTo 0) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        (0 until GridEngine.GRID_SIZE).forEach { lane ->
-                            val here = enemies.filter { it.lane == lane && it.progress == progress }
-                            val cellColor = when {
-                                here.isEmpty() -> Color(0xFF10262B)
-                                here.any { it.type == EnemyType.BOSS } -> Color(0xFFD29922)
-                                else -> Color(0xFF8B2635)
-                            }
-                            Box(
-                                modifier = Modifier.weight(1f).height(8.dp)
-                                    .background(cellColor, RoundedCornerShape(2.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (here.isNotEmpty()) {
-                                    Text(
-                                        if (here.size > 1) here.size.toString() else "◆",
-                                        color = Color.White,
-                                        fontSize = 7.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        TacticalBattlefield(
+            enemies = enemies,
+            baseHp = baseHp,
+            turn = turns,
+            effectEvents = effectEvents,
+            effectTargets = effectTargets,
+            effectKey = effectKey,
+            modifier = Modifier.fillMaxWidth().height(122.dp)
+        )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text("BASE SHIELD", color = Color(0xFF9CB8C8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Text("$baseHp / 100 HP", color = if (baseHp > 30) Color(0xFF3FB950) else Color(0xFFF85149), fontSize = 10.sp, fontWeight = FontWeight.Bold)
