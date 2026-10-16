@@ -54,7 +54,9 @@ data class CombatEvent(
     val type: CombatEventType,
     val enemyId: Long? = null,
     /** Damage, repair, reward, or progress amount, depending on event type. */
-    val amount: Int = 0
+    val amount: Int = 0,
+    /** Weapon responsible for a visual/audio hit effect; null for non-weapon events. */
+    val weaponColor: AmmoColor? = null
 )
 
 data class CombatResult(
