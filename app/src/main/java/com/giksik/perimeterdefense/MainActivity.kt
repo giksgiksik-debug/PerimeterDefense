@@ -32,11 +32,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -84,6 +88,8 @@ class MainActivity : ComponentActivity() {
 private fun PerimeterGame() {
     val appContext = LocalContext.current.applicationContext
     val persistence = remember { GamePersistence(appContext) }
+    val audioPreferences = remember { appContext.getSharedPreferences("perimeter_audio", 0) }
+    var soundEnabled by remember { mutableStateOf(audioPreferences.getBoolean("sound_enabled", true)) }
     var saveReady by remember { mutableStateOf(false) }
     var grid by remember { mutableStateOf(GridEngine.newGrid()) }
     var mode by remember { mutableStateOf(InteractionMode.DRILL_REVEAL) }
@@ -92,6 +98,39 @@ private fun PerimeterGame() {
     var visualEvents by remember { mutableStateOf<List<CombatEvent>>(emptyList()) }
     var visualTargets by remember { mutableStateOf<List<EnemyUnit>>(emptyList()) }
     var visualEffectKey by remember { mutableStateOf(0) }
+    var shakeOffsetX by remember { mutableFloatStateOf(0f) }
+    var shakeOffsetY by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current.density
+
+    LaunchedEffect(soundEnabled) {
+        TacticalSoundSynth.soundEnabled = soundEnabled
+        audioPreferences.edit().putBoolean("sound_enabled", soundEnabled).apply()
+    }
+
+    LaunchedEffect(visualEffectKey) {
+        val hasImpact = visualEffectKey > 0 && visualEvents.any {
+            it.type == CombatEventType.ENEMY_DAMAGED ||
+                it.type == CombatEventType.ENEMY_DESTROYED ||
+                it.type == CombatEventType.BASE_DAMAGED ||
+                it.type == CombatEventType.BASE_REPAIRED ||
+                it.type == CombatEventType.TURRETS_STUNNED
+        }
+        if (hasImpact) {
+            val start = withFrameNanos { it }
+            var now = start
+            val durationNanos = 300_000_000L
+            while (now - start < durationNanos) {
+                val progress = ((now - start).toFloat() / durationNanos).coerceIn(0f, 1f)
+                val amplitude = 8.5f * density * (1f - progress) * (1f - progress)
+                val elapsed = (now - start).toDouble()
+                shakeOffsetX = kotlin.math.sin(elapsed / 38_000_000.0 * 2.0 * Math.PI).toFloat() * amplitude
+                shakeOffsetY = kotlin.math.cos(elapsed / 31_000_000.0 * 2.0 * Math.PI).toFloat() * amplitude * 0.58f
+                now = withFrameNanos { it }
+            }
+        }
+        shakeOffsetX = 0f
+        shakeOffsetY = 0f
+    }
 
     LaunchedEffect(Unit) {
         val saved = persistence.load()
@@ -118,11 +157,13 @@ private fun PerimeterGame() {
             putAll(combat.enemies.associateBy { it.id })
         }
         if (result.detonatedMines > 0) {
+            TacticalSoundSynth.playHeavyExplosion()
             val detonation = CombatEngine.registerMineDetonation(nextCombat)
             nextCombat = detonation.state
             turnVisualEvents += detonation.events
         }
         if (result.capturedMines > 0) {
+            TacticalSoundSynth.playMineCatapult()
             nextCombat = nextCombat.copy(chips = nextCombat.chips + result.capturedMines * 25)
             repeat(result.capturedMines) {
                 visualCandidates.putAll(nextCombat.enemies.associateBy { it.id })
@@ -133,6 +174,12 @@ private fun PerimeterGame() {
         }
 
         val matchResolution = GridEngine.resolveMatches(result.grid)
+        matchResolution.groups.take(3).forEach { group ->
+            TacticalSoundSynth.playTurretFire(group.ammoColor)
+        }
+        if (matchResolution.groups.isEmpty() && result.detonatedMines == 0 && result.capturedMines == 0) {
+            TacticalSoundSynth.playArmorClick()
+        }
         grid = matchResolution.grid
         visualCandidates.putAll(nextCombat.enemies.associateBy { it.id })
         val attackResult = CombatEngine.resolveMatches(nextCombat, matchResolution.groups)
@@ -186,6 +233,7 @@ private fun PerimeterGame() {
         // Match-3 is a direct gesture and must work even when the capture tool was selected.
         val swap = GridEngine.swapAdjacent(grid, row1, col1, row2, col2)
         status = swap.message
+        if (!swap.accepted) TacticalSoundSynth.playErrorBuzz()
         if (swap.accepted) {
             applyGridResult(
                 GridResult(
@@ -216,7 +264,15 @@ private fun PerimeterGame() {
                         color = Color(0xFF9CB8C8), fontSize = 9.sp, fontWeight = FontWeight.SemiBold
                     )
                 }
-                Text("Ⅱ", color = Color.White, fontSize = 24.sp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        if (soundEnabled) "♫" else "♪",
+                        color = if (soundEnabled) Neon else Color(0xFF8293A2),
+                        fontSize = 23.sp,
+                        modifier = Modifier.clickable { soundEnabled = !soundEnabled }
+                    )
+                    Text("Ⅱ", color = Color.White, fontSize = 24.sp)
+                }
             }
 
             RadarPanel(
@@ -227,7 +283,9 @@ private fun PerimeterGame() {
                 effectEvents = visualEvents,
                 effectTargets = visualTargets,
                 effectKey = visualEffectKey,
-                compact = compact
+                compact = compact,
+                shakeOffsetX = shakeOffsetX,
+                shakeOffsetY = shakeOffsetY
             )
 
             Text(
@@ -240,7 +298,10 @@ private fun PerimeterGame() {
 
             // Board takes only the space left between radar and the fixed bottom controls.
             BoxWithConstraints(
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                modifier = Modifier.fillMaxWidth().weight(1f).graphicsLayer {
+                    translationX = shakeOffsetX
+                    translationY = shakeOffsetY
+                },
                 contentAlignment = Alignment.Center
             ) {
                 val matrixSize = minOf(maxWidth - 4.dp, maxHeight - 2.dp).coerceAtLeast(160.dp)
@@ -391,6 +452,7 @@ private fun PerimeterGame() {
                     status = "СКАНЕР: мин на поле — " + mines + "; целей на радаре — " + combat.enemies.size + "."
                 }
                 Booster("АВИАУДАР", "18 DMG", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
+                    TacticalSoundSynth.playHeavyExplosion()
                     val result = CombatEngine.launchAirstrike(combat)
                     if (result.events.isNotEmpty()) {
                         visualEvents = result.events
@@ -404,6 +466,7 @@ private fun PerimeterGame() {
                     status = if (damaged == 0) "Авиаудар: целей нет." else "Авиаудар: поражено целей — $damaged, уничтожено — $destroyed."
                 }
                 Booster("РЕМОНТ", "+15 HP", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
+                    TacticalSoundSynth.playTurretFire(AmmoColor.GREEN_HEAL)
                     val result = CombatEngine.repairBase(combat)
                     if (result.events.isNotEmpty()) {
                         visualEvents = result.events
@@ -446,10 +509,15 @@ private fun RadarPanel(
     effectEvents: List<CombatEvent>,
     effectTargets: List<EnemyUnit>,
     effectKey: Int,
-    compact: Boolean
+    compact: Boolean,
+    shakeOffsetX: Float,
+    shakeOffsetY: Float
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(if (compact) 7.dp else 10.dp),
+        modifier = Modifier.fillMaxWidth().graphicsLayer {
+            translationX = shakeOffsetX
+            translationY = shakeOffsetY
+        }.background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(if (compact) 7.dp else 10.dp),
         verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 7.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
