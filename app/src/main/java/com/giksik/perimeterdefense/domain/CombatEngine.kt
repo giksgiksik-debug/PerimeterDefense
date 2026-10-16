@@ -52,6 +52,47 @@ object CombatEngine {
         return CombatResult(state.copy(enemies = nextEnemies, chips = nextChips), events)
     }
 
+    fun repairBase(state: CombatState, amount: Int = 15): CombatResult {
+        if (state.isGameOver) return CombatResult(state)
+        val before = state.baseHp
+        val after = (before + amount.coerceAtLeast(0)).coerceAtMost(state.maxBaseHp)
+        val repaired = after - before
+        return CombatResult(
+            state = state.copy(baseHp = after),
+            events = if (repaired > 0) listOf(CombatEvent(CombatEventType.BASE_REPAIRED, amount = repaired)) else emptyList()
+        )
+    }
+
+    /** Damages every active enemy; rewards are granted only for destroyed units. */
+    fun launchAirstrike(state: CombatState, damage: Int = 18): CombatResult {
+        if (state.isGameOver || state.enemies.isEmpty()) return CombatResult(state)
+        val appliedDamage = damage.coerceAtLeast(0)
+        val events = mutableListOf<CombatEvent>()
+        var chips = state.chips
+        val survivors = mutableListOf<EnemyUnit>()
+
+        for (enemy in state.enemies.filter { it.isAlive }.sortedBy { it.id }) {
+            val remainingHealth = (enemy.health - appliedDamage).coerceAtLeast(0)
+            events += CombatEvent(
+                CombatEventType.ENEMY_DAMAGED,
+                enemyId = enemy.id,
+                amount = minOf(enemy.health, appliedDamage)
+            )
+            if (remainingHealth == 0) {
+                val reward = enemy.rewardChips.coerceAtLeast(0)
+                chips += reward
+                events += CombatEvent(CombatEventType.ENEMY_DESTROYED, enemy.id, reward)
+            } else {
+                survivors += enemy.copy(health = remainingHealth)
+            }
+        }
+
+        return CombatResult(
+            state = state.copy(enemies = survivors, chips = chips),
+            events = events
+        )
+    }
+
     private fun spawnWave(state: CombatState, wave: Int): CombatState {
         val safeWave = wave.coerceAtLeast(1)
         val count = (2 + safeWave).coerceAtMost(6)

@@ -211,9 +211,23 @@ private fun PerimeterGame() {
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Booster("СКАНЕР", "AD", Modifier.weight(1f))
-            Booster("АВИАУДАР", "AD", Modifier.weight(1f))
-            Booster("РЕМОНТ", "+15", Modifier.weight(1f))
+            Booster("СКАНЕР", "SCAN", Modifier.weight(1f)) {
+                val mines = grid.flatten().count { it.hasMine }
+                status = "СКАНЕР: мин на поле — $mines; целей на радаре — ${combat.enemies.size}."
+            }
+            Booster("АВИАУДАР", "18 DMG", Modifier.weight(1f)) {
+                val result = CombatEngine.launchAirstrike(combat)
+                combat = CombatEngine.advanceTurn(result.state).state
+                val damaged = result.events.count { it.type == CombatEventType.ENEMY_DAMAGED }
+                val destroyed = result.events.count { it.type == CombatEventType.ENEMY_DESTROYED }
+                status = if (damaged == 0) "Авиаудар: целей нет." else "Авиаудар: поражено целей — $damaged, уничтожено — $destroyed."
+            }
+            Booster("РЕМОНТ", "+15 HP", Modifier.weight(1f)) {
+                val result = CombatEngine.repairBase(combat)
+                combat = CombatEngine.advanceTurn(result.state).state
+                val repaired = result.events.filter { it.type == CombatEventType.BASE_REPAIRED }.sumOf { it.amount }
+                status = if (repaired == 0) "Ремонт: щит уже полон." else "Ремонт: восстановлено $repaired HP."
+            }
         }
     }
 
@@ -305,9 +319,14 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUn
 }
 
 @Composable
-private fun Booster(title: String, badge: String, modifier: Modifier = Modifier) {
+private fun Booster(
+    title: String,
+    badge: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Column(
-        modifier = modifier.background(SurfaceDark, RoundedCornerShape(8.dp)).border(1.dp, BorderDark, RoundedCornerShape(8.dp)).padding(vertical = 10.dp, horizontal = 4.dp),
+        modifier = modifier.background(SurfaceDark, RoundedCornerShape(8.dp)).border(1.dp, BorderDark, RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {

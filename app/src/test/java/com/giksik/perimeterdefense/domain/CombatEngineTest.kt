@@ -147,4 +147,27 @@ class CombatEngineTest {
         assertEquals(50, result.state.enemies.first { it.id == 1L }.health)
     }
 
+    @Test
+    fun airstrikeDamagesAllEnemiesAndAwardsOnlyKillRewards() {
+        val state = CombatState(chips = 5, enemies = listOf(
+            enemy(id = 1L, health = 15, maxHealth = 15, rewardChips = 10),
+            enemy(id = 2L, health = 50, maxHealth = 50, rewardChips = 20)
+        ))
+
+        val result = CombatEngine.launchAirstrike(state)
+
+        assertEquals(listOf(2L), result.state.enemies.map { it.id })
+        assertEquals(37, result.state.enemies.single().health)
+        assertEquals(15, result.state.chips)
+        assertEquals(1, result.events.count { it.type == CombatEventType.ENEMY_DESTROYED })
+    }
+
+    @Test
+    fun repairBoosterCapsHealthAtMaximum() {
+        val result = CombatEngine.repairBase(CombatState(baseHp = 92, maxBaseHp = 100))
+
+        assertEquals(100, result.state.baseHp)
+        assertEquals(8, result.events.single().amount)
+    }
+
 }
