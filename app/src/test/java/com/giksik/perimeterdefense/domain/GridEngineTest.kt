@@ -138,4 +138,50 @@ class GridEngineTest {
         assertTrue(GridEngine.findMatchGroups(result.grid).isEmpty())
     }
 
+
+    @Test
+    fun adjacentSwapThatCreatesMatchIsAccepted() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                when {
+                    row == 0 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    row == 1 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.BLUE)
+                    row == 1 && col == 1 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    row == 2 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    else -> GridCell(row, col)
+                }
+            }
+        }
+
+        val result = GridEngine.swapAdjacent(grid, 1, 1, 1, 0)
+
+        assertTrue(result.accepted)
+        assertEquals(AmmoColor.RED, result.grid[1][0].ammoColor)
+        assertEquals(AmmoColor.BLUE, result.grid[1][1].ammoColor)
+        assertTrue(GridEngine.findMatchGroups(result.grid).any { it.cells.containsAll(setOf(0 to 0, 1 to 0, 2 to 0)) })
+    }
+
+    @Test
+    fun adjacentSwapWithoutMatchIsRejectedAndGridStaysUnchanged() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                if (row == 0 && col in 0..1) {
+                    GridCell(
+                        row, col, state = CellState.REVEALED,
+                        ammoColor = if (col == 0) AmmoColor.RED else AmmoColor.BLUE
+                    )
+                } else GridCell(row, col)
+            }
+        }
+
+        val result = GridEngine.swapAdjacent(grid, 0, 0, 0, 1)
+
+        assertFalse(result.accepted)
+        assertEquals(grid, result.grid)
+    }
+
 }
