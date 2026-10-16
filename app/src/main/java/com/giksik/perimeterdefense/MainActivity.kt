@@ -25,16 +25,20 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.giksik.perimeterdefense.data.GamePersistence
+import com.giksik.perimeterdefense.data.SavedGame
 import com.giksik.perimeterdefense.domain.AmmoColor
 import com.giksik.perimeterdefense.domain.CombatEngine
 import com.giksik.perimeterdefense.domain.CombatEventType
@@ -65,10 +69,27 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun PerimeterGame() {
+    val appContext = LocalContext.current.applicationContext
+    val persistence = remember { GamePersistence(appContext) }
+    var saveReady by remember { mutableStateOf(false) }
     var grid by remember { mutableStateOf(GridEngine.newGrid()) }
     var mode by remember { mutableStateOf(InteractionMode.DRILL_REVEAL) }
     var combat by remember { mutableStateOf(CombatEngine.newGame()) }
     var status by remember { mutableStateOf("Периметр стабилен. Выберите плитку.") }
+
+    LaunchedEffect(Unit) {
+        val saved = persistence.load()
+        if (saved != null) {
+            grid = saved.grid
+            combat = saved.combat
+            mode = saved.mode
+        }
+        saveReady = true
+    }
+
+    LaunchedEffect(grid, combat, mode, saveReady) {
+        if (saveReady) persistence.save(SavedGame(grid = grid, combat = combat, mode = mode))
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(12.dp),
