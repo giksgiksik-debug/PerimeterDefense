@@ -22,3 +22,23 @@ data class GridResult(
     val turnConsumed: Boolean = false,
     val message: String = ""
 )
+
+
+/**
+ * A single connected Match-3 group. Crossing horizontal and vertical runs
+ * of the same color are represented as one group, with intersection cells counted once.
+ */
+data class MatchGroup(
+    val ammoColor: AmmoColor,
+    val cells: Set<Pair<Int, Int>>
+) {
+    val size: Int get() = cells.size
+
+    /** Damage/reward multiplier from the supplied prototype's combo rules. */
+    val multiplier: Double
+        get() = when {
+            size >= 5 -> 2.5
+            size == 4 -> 1.5
+            else -> 1.0
+        }
+}

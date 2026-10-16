@@ -112,38 +112,87 @@ object GridEngine {
         )
     }
 
-    fun findMatches(grid: List<List<GridCell>>): Set<Pair<Int, Int>> {
-        val matched = mutableSetOf<Pair<Int, Int>>()
-        fun valid(cell: GridCell) =
-            cell.state == CellState.REVEALED && !cell.hasMine && cell.ammoColor != AmmoColor.NONE
+    /**
+     * Finds contiguous Match-3 runs and merges same-color runs that intersect
+     * (for example, a T or cross). Separate runs of the same color stay separate.
+     */
+    fun findMatchGroups(grid: List<List<GridCell>>): List<MatchGroup> {
+        val groups = mutableListOf<MatchGroup>()
 
+        fun valid(cell: GridCell): Boolean =
+            cell.state == CellState.REVEALED &&
+                !cell.hasMine &&
+                cell.ammoColor != AmmoColor.NONE
+
+        fun addRun(color: AmmoColor, runCells: Set<Pair<Int, Int>>) {
+            val mergedCells = runCells.toMutableSet()
+            var merged: Boolean
+            do {
+                merged = false
+                val iterator = groups.iterator()
+                while (iterator.hasNext()) {
+                    val existing = iterator.next()
+                    if (existing.ammoColor == color && existing.cells.any { it in mergedCells }) {
+                        mergedCells.addAll(existing.cells)
+                        iterator.remove()
+                        merged = true
+                    }
+                }
+            } while (merged)
+            groups.add(MatchGroup(color, mergedCells))
+        }
+
+        // Horizontal runs.
         for (row in 0 until GRID_SIZE) {
             var start = 0
             while (start < GRID_SIZE) {
+                val first = grid[row][start]
                 var end = start + 1
-                while (end < GRID_SIZE && valid(grid[row][start]) && valid(grid[row][end]) &&
-                    grid[row][start].ammoColor == grid[row][end].ammoColor) end++
-                if (end - start >= 3 && valid(grid[row][start])) {
-                    for (col in start until end) matched.add(row to col)
+                while (
+                    end < GRID_SIZE &&
+                    valid(first) &&
+                    valid(grid[row][end]) &&
+                    grid[row][end].ammoColor == first.ammoColor
+                ) {
+                    end++
+                }
+                if (valid(first) && end - start >= 3) {
+                    addRun(first.ammoColor, (start until end).mapTo(linkedSetOf()) { row to it })
                 }
                 start = end
             }
         }
 
+        // Vertical runs.
         for (col in 0 until GRID_SIZE) {
             var start = 0
             while (start < GRID_SIZE) {
+                val first = grid[start][col]
                 var end = start + 1
-                while (end < GRID_SIZE && valid(grid[start][col]) && valid(grid[end][col]) &&
-                    grid[start][col].ammoColor == grid[end][col].ammoColor) end++
-                if (end - start >= 3 && valid(grid[start][col])) {
-                    for (row in start until end) matched.add(row to col)
+                while (
+                    end < GRID_SIZE &&
+                    valid(first) &&
+                    valid(grid[end][col]) &&
+                    grid[end][col].ammoColor == first.ammoColor
+                ) {
+                    end++
+                }
+                if (valid(first) && end - start >= 3) {
+                    addRun(first.ammoColor, (start until end).mapTo(linkedSetOf()) { it to col })
                 }
                 start = end
             }
         }
-        return matched
+
+        return groups.sortedWith(
+            compareBy<MatchGroup> { group -> group.cells.minOf { it.first } }
+                .thenBy { group -> group.cells.minOf { it.second } }
+        )
     }
+
+    /** Backward-compatible flat set used by existing callers. */
+    fun findMatches(grid: List<List<GridCell>>): Set<Pair<Int, Int>> =
+        findMatchGroups(grid).flatMapTo(mutableSetOf()) { it.cells }
 
     private fun randomAmmo(random: Random): AmmoColor {
         val roll = random.nextInt(100)
