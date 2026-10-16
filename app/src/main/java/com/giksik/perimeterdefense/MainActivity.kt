@@ -182,10 +182,7 @@ private fun PerimeterGame() {
     }
 
     fun handleSwipe(row1: Int, col1: Int, row2: Int, col2: Int) {
-        if (mode != InteractionMode.DRILL_REVEAL) {
-            status = "РЕЖИМ ЗАХВАТА: коснись закрытой клетки."
-            return
-        }
+        // Match-3 is a direct gesture and must work even when the capture tool was selected.
         val swap = GridEngine.swapAdjacent(grid, row1, col1, row2, col2)
         status = swap.message
         if (swap.accepted) {
