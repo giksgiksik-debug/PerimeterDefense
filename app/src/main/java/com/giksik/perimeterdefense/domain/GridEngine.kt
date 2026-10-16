@@ -112,6 +112,56 @@ object GridEngine {
         )
     }
 
+
+    /**
+     * Swaps two adjacent revealed ammunition cells only when the move creates
+     * a match touching at least one of the swapped cells. Hidden cells and mines
+     * keep their Minesweeper meaning and cannot be moved.
+     */
+    fun swapAdjacent(
+        grid: List<List<GridCell>>,
+        row1: Int,
+        col1: Int,
+        row2: Int,
+        col2: Int
+    ): GridSwapResult {
+        val first = grid.getOrNull(row1)?.getOrNull(col1)
+            ?: return GridSwapResult(grid, false, "СВАЙП: клетка вне поля")
+        val second = grid.getOrNull(row2)?.getOrNull(col2)
+            ?: return GridSwapResult(grid, false, "СВАЙП: клетка вне поля")
+
+        if (kotlin.math.abs(row1 - row2) + kotlin.math.abs(col1 - col2) != 1) {
+            return GridSwapResult(grid, false, "Двигай боеприпасы на соседнюю клетку")
+        }
+        if (
+            first.state != CellState.REVEALED || second.state != CellState.REVEALED ||
+            first.hasMine || second.hasMine ||
+            first.ammoColor == AmmoColor.NONE || second.ammoColor == AmmoColor.NONE
+        ) {
+            return GridSwapResult(grid, false, "Открывай клетки буром, чтобы двигать боеприпасы")
+        }
+        if (first.ammoColor == second.ammoColor) {
+            return GridSwapResult(grid, false, "Выбери боеприпасы разных цветов")
+        }
+
+        val swapped = grid.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                when (row to col) {
+                    row1 to col1 -> cell.copy(ammoColor = second.ammoColor)
+                    row2 to col2 -> cell.copy(ammoColor = first.ammoColor)
+                    else -> cell
+                }
+            }
+        }
+        val touchedCells = setOf(row1 to col1, row2 to col2)
+        val groups = findMatchGroups(swapped)
+        if (groups.none { group -> group.cells.any { it in touchedCells } }) {
+            return GridSwapResult(grid, false, "СЕРИИ НЕТ — попробуй другой свайп")
+        }
+
+        return GridSwapResult(swapped, true, "СЕРИЯ СОБРАНА — турели атакуют!")
+    }
+
     /**
      * Finds contiguous Match-3 runs and merges same-color runs that intersect
      * (for example, a T or cross). Separate runs of the same color stay separate.
