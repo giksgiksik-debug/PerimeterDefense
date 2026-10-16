@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,10 +50,10 @@ import com.giksik.perimeterdefense.domain.CellState
 import com.giksik.perimeterdefense.domain.GridEngine
 import com.giksik.perimeterdefense.domain.InteractionMode
 
-private val Background = Color(0xFF0D1117)
-private val SurfaceDark = Color(0xFF161B22)
-private val BorderDark = Color(0xFF30363D)
-private val Neon = Color(0xFF58A6FF)
+private val Background = Color(0xFF070B13)
+private val SurfaceDark = Color(0xE6101B2A)
+private val BorderDark = Color(0xFF244454)
+private val Neon = Color(0xFF00E5FF)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,7 +61,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = Background) {
-                    PerimeterGame()
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        NeonBackdrop()
+                        PerimeterGame()
+                    }
                 }
             }
         }
@@ -97,17 +101,17 @@ private fun PerimeterGame() {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Column {
-                Text("PERIMETER DEFENSE", color = Neon, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                Text("WAVE %02d  •  ЧИПЫ %04d".format(combat.wave, combat.chips), color = Color.LightGray, fontSize = 11.sp)
+                Text("PERIMETER // DEFENSE", color = Neon, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                Text("TACTICAL NETWORK ONLINE  •  WAVE %02d  •  CR %04d".format(combat.wave, combat.chips), color = Color(0xFF9CB8C8), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
             }
             Text("Ⅱ", color = Color.White, fontSize = 24.sp)
         }
 
         RadarPanel(baseHp = combat.baseHp, stun = combat.turretStunTurns, turns = combat.turn, enemies = combat.enemies)
 
-        Text("ЭНЕРГОМАТРИЦА  //  6 × 6", color = Neon, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("ENERGY MATRIX  //  6 × 6", color = Neon, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Column(
-            modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, BorderDark, RoundedCornerShape(10.dp)).padding(6.dp),
+            modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(6.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             grid.forEachIndexed { rowIndex, row ->
@@ -126,8 +130,8 @@ private fun PerimeterGame() {
                         }
                         Box(
                             modifier = Modifier.weight(1f).aspectRatio(1f)
-                                .background(tileColor, RoundedCornerShape(5.dp))
-                                .border(1.dp, if (cell.state == CellState.HIDDEN) BorderDark else Color.White.copy(alpha = 0.12f), RoundedCornerShape(5.dp))
+                                .background(Brush.radialGradient(colors = listOf(tileColor.copy(alpha = 0.98f), tileColor.copy(alpha = 0.52f))), RoundedCornerShape(5.dp))
+                                .border(1.dp, if (cell.state == CellState.HIDDEN) Color(0xFF1C718A) else tileColor.copy(alpha = 0.92f), RoundedCornerShape(5.dp))
                                 .clickable {
                                     val result = if (mode == InteractionMode.DRILL_REVEAL) {
                                         GridEngine.reveal(grid, rowIndex, colIndex)
@@ -185,8 +189,8 @@ private fun PerimeterGame() {
                                         else -> "·"
                                     }
                                 },
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
+                                color = if (cell.state == CellState.HIDDEN) Color(0xFF65DDF0) else Color.White,
+                                fontWeight = FontWeight.Black,
                                 fontSize = 14.sp
                             )
                         }
@@ -253,7 +257,7 @@ private fun PerimeterGame() {
 @Composable
 private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUnit>) {
     Column(
-        modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, BorderDark, RoundedCornerShape(10.dp)).padding(10.dp),
+        modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -262,8 +266,8 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUn
         }
         Box(
             modifier = Modifier.fillMaxWidth().weight(1f, fill = false).fillMaxWidth().height(70.dp)
-                .background(Color(0xFF0B171D), RoundedCornerShape(6.dp))
-                .border(1.dp, Color(0xFF1F6B55), RoundedCornerShape(6.dp)),
+                .background(Brush.radialGradient(colors = listOf(Color(0xFF0C2A35), Color(0xFF07151F))), RoundedCornerShape(6.dp))
+                .border(1.dp, Color(0xFF00AFC6).copy(alpha = 0.62f), RoundedCornerShape(6.dp)),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -310,9 +314,9 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUn
         }
         Text("ВРАГОВ: ${enemies.size}", color = Color.LightGray, fontSize = 9.sp)
         Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
-            Text("🔴 МОРТИРА", color = Color(0xFFE5534B), fontSize = 9.sp)
-            Text("🔵 КРИО", color = Color(0xFF58A6FF), fontSize = 9.sp)
-            Text("🟡 ТЕСЛА", color = Color(0xFFD29922), fontSize = 9.sp)
+            Text("◆  MORTAR", color = Color(0xFFFF667A), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("◆  CRYO", color = Color(0xFF45D9FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("◆  TESLA", color = Color(0xFFFFC857), fontSize = 9.sp, fontWeight = FontWeight.Bold)
         }
         if (stun > 0) Text("⚠ ПЕРЕГРУЗКА: $stun хода", color = Color(0xFFF85149), fontSize = 10.sp)
     }
@@ -326,7 +330,7 @@ private fun Booster(
     onClick: () -> Unit
 ) {
     Column(
-        modifier = modifier.background(SurfaceDark, RoundedCornerShape(8.dp)).border(1.dp, BorderDark, RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        modifier = modifier.background(Brush.verticalGradient(listOf(Color(0xFF172A3A), Color(0xFF0B131F))), RoundedCornerShape(8.dp)).border(1.dp, Color(0xFF1B667C), RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
