@@ -86,7 +86,7 @@ private fun PerimeterGame() {
     var grid by remember { mutableStateOf(GridEngine.newGrid()) }
     var mode by remember { mutableStateOf(InteractionMode.DRILL_REVEAL) }
     var combat by remember { mutableStateOf(CombatEngine.newGame()) }
-    var status by remember { mutableStateOf("Периметр стабилен. Выберите плитку.") }
+    var status by remember { mutableStateOf("Тап: открыть клетку. Свайп: собрать 3 одинаковых открытых боеприпаса.") }
     var visualEvents by remember { mutableStateOf<List<CombatEvent>>(emptyList()) }
     var visualTargets by remember { mutableStateOf<List<EnemyUnit>>(emptyList()) }
     var visualEffectKey by remember { mutableStateOf(0) }
@@ -376,7 +376,7 @@ private fun PerimeterGame() {
                     grid = GridEngine.newGrid()
                     combat = CombatEngine.newGame()
                     mode = InteractionMode.DRILL_REVEAL
-                    status = "Периметр стабилен. Выберите плитку."
+                    status = "Тап: открыть клетку. Свайп: собрать 3 одинаковых открытых боеприпаса."
                 }) {
                     Text("ПОВТОРИТЬ")
                 }
