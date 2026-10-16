@@ -39,6 +39,7 @@ import com.giksik.perimeterdefense.domain.EnemyType
 import com.giksik.perimeterdefense.domain.EnemyUnit
 import kotlinx.coroutines.flow.collect
 import kotlin.math.max
+import kotlin.math.PI
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.cos
