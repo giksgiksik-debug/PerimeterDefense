@@ -294,15 +294,23 @@ private fun PerimeterGame() {
                                 },
                             contentAlignment = Alignment.Center
                         ) {
+                            NeonTileGlyph(cell = cell, modifier = Modifier.fillMaxSize().padding(3.dp))
                             if (cell.state == CellState.REVEALED && !cell.hasMine && cell.adjacentMines > 0) {
-                                Text(
-                                    text = cell.adjacentMines.toString(),
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 15.sp
-                                )
-                            } else {
-                                NeonTileGlyph(cell = cell, modifier = Modifier.fillMaxSize().padding(3.dp))
+                                Box(
+                                    modifier = Modifier.align(Alignment.TopEnd)
+                                        .padding(3.dp)
+                                        .background(Color(0xDD07111C), RoundedCornerShape(4.dp))
+                                        .border(1.dp, BorderDark, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 3.dp, vertical = 0.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = cell.adjacentMines.toString(),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 8.sp
+                                    )
+                                }
                             }
                         }
                     }
