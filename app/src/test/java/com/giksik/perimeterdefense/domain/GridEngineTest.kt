@@ -205,4 +205,24 @@ class GridEngineTest {
     }
 
 
+
+    @Test
+    fun legacyFirstWaveGridGetsAPlayableOpeningMatch() {
+        val initial = GridEngine.newGrid(Random(321))
+        val legacy = initial.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                if (row in 2..3 && col in 2..4) {
+                    cell.copy(ammoColor = AmmoColor.YELLOW)
+                } else cell
+            }
+        }
+
+        val migrated = GridEngine.ensureOpeningMatch(legacy)
+        val swap = GridEngine.swapAdjacent(migrated, 2, 3, 3, 3)
+
+        assertTrue(swap.accepted)
+        assertTrue(GridEngine.findMatchGroups(swap.grid).any { it.size >= 3 })
+    }
+
+
 }
