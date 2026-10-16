@@ -202,7 +202,7 @@ private fun PerimeterGame() {
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = maxHeight < 820.dp
-        val matrixSize = minOf(maxWidth - 20.dp, maxHeight - 340.dp).coerceAtLeast(230.dp)
+        val matrixSize = minOf(maxWidth - 20.dp, maxHeight - 450.dp).coerceAtLeast(230.dp)
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 10.dp),
             verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 10.dp)
