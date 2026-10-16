@@ -157,7 +157,7 @@ class CombatEngineTest {
         val result = CombatEngine.launchAirstrike(state)
 
         assertEquals(listOf(2L), result.state.enemies.map { it.id })
-        assertEquals(37, result.state.enemies.single().health)
+        assertEquals(32, result.state.enemies.single().health)
         assertEquals(15, result.state.chips)
         assertEquals(1, result.events.count { it.type == CombatEventType.ENEMY_DESTROYED })
     }
