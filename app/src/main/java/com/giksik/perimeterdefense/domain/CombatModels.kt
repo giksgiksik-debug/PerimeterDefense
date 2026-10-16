@@ -31,12 +31,12 @@ data class CombatState(
 }
 
 data class CombatRules(
-    val pathLength: Int = 5,
-    val mortarDamage: Int = 20,
-    val cryoDamage: Int = 8,
-    val cryoSlowTurns: Int = 1,
-    val teslaDamage: Int = 12,
-    val teslaProgressRadius: Int = 1,
+    val pathLength: Int = 7,
+    val mortarDamage: Int = 30,
+    val cryoDamage: Int = 14,
+    val cryoSlowTurns: Int = 2,
+    val teslaDamage: Int = 18,
+    val teslaProgressRadius: Int = 2,
     val repairAmount: Int = 15
 )
 
