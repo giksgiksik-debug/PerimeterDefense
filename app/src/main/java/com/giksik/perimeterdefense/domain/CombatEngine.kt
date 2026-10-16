@@ -45,7 +45,7 @@ object CombatEngine {
             nextEnemies = nextEnemies.filterNot { it.id == target.id }
             val reward = target.rewardChips.coerceAtLeast(0)
             nextChips += reward
-            events += CombatEvent(CombatEventType.ENEMY_DESTROYED, target.id, reward)
+            events += CombatEvent(CombatEventType.ENEMY_DESTROYED, target.id, reward, AmmoColor.RED)
         } else {
             nextEnemies = nextEnemies.map { if (it.id == target.id) it.copy(health = nextHealth) else it }
         }
@@ -147,16 +147,16 @@ object CombatEngine {
         var chips = initialState.chips
         val events = mutableListOf<CombatEvent>()
 
-        fun damageEnemy(enemyId: Long, damage: Int) {
+        fun damageEnemy(enemyId: Long, damage: Int, weaponColor: AmmoColor) {
             val enemy = enemies.firstOrNull { it.id == enemyId } ?: return
             val appliedDamage = damage.coerceAtLeast(0)
             val remainingHealth = (enemy.health - appliedDamage).coerceAtLeast(0)
-            events += CombatEvent(CombatEventType.ENEMY_DAMAGED, enemyId, minOf(enemy.health, appliedDamage))
+            events += CombatEvent(CombatEventType.ENEMY_DAMAGED, enemyId, minOf(enemy.health, appliedDamage), weaponColor)
 
             if (remainingHealth == 0) {
                 enemies = enemies.filterNot { it.id == enemyId }
                 chips += enemy.rewardChips.coerceAtLeast(0)
-                events += CombatEvent(CombatEventType.ENEMY_DESTROYED, enemyId, enemy.rewardChips.coerceAtLeast(0))
+                events += CombatEvent(CombatEventType.ENEMY_DESTROYED, enemyId, enemy.rewardChips.coerceAtLeast(0), weaponColor)
             } else {
                 enemies = enemies.map {
                     if (it.id == enemyId) it.copy(health = remainingHealth) else it
@@ -190,9 +190,9 @@ object CombatEngine {
                 .firstOrNull() ?: continue
 
             when (group.ammoColor) {
-                AmmoColor.RED -> damageEnemy(target.id, scaledDamage(rules.mortarDamage, group))
+                AmmoColor.RED -> damageEnemy(target.id, scaledDamage(rules.mortarDamage, group), AmmoColor.RED)
                 AmmoColor.BLUE -> {
-                    damageEnemy(target.id, scaledDamage(rules.cryoDamage, group))
+                    damageEnemy(target.id, scaledDamage(rules.cryoDamage, group), AmmoColor.BLUE)
                     enemies = enemies.map {
                         if (it.id == target.id) it.copy(slowTurns = maxOf(it.slowTurns, rules.cryoSlowTurns))
                         else it
@@ -208,7 +208,7 @@ object CombatEngine {
                                 abs(it.progress - target.progress) <= rules.teslaProgressRadius
                         }
                         .map { it.id }
-                    targetIds.forEach { id -> damageEnemy(id, scaledDamage(rules.teslaDamage, group)) }
+                    targetIds.forEach { id -> damageEnemy(id, scaledDamage(rules.teslaDamage, group), AmmoColor.YELLOW) }
                 }
                 AmmoColor.GREEN_HEAL, AmmoColor.NONE -> Unit
             }
