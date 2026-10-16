@@ -94,7 +94,7 @@ private fun PerimeterGame() {
     var grid by remember { mutableStateOf(GridEngine.newGrid()) }
     var mode by remember { mutableStateOf(InteractionMode.DRILL_REVEAL) }
     var combat by remember { mutableStateOf(CombatEngine.newGame()) }
-    var status by remember { mutableStateOf("Тап: открыть клетку. Свайп: собрать 3 одинаковых открытых боеприпаса.") }
+    var status by remember { mutableStateOf("ПЕРВЫЙ ХОД: свайпни вертикально между двумя центральными цветными клетками.") }
     var visualEvents by remember { mutableStateOf<List<CombatEvent>>(emptyList()) }
     var visualTargets by remember { mutableStateOf<List<EnemyUnit>>(emptyList()) }
     var visualEffectKey by remember { mutableStateOf(0) }
@@ -135,8 +135,12 @@ private fun PerimeterGame() {
     LaunchedEffect(Unit) {
         val saved = persistence.load()
         if (saved != null) {
-            grid = saved.grid
             combat = saved.combat
+            grid = if (saved.combat.wave == 1 && saved.combat.turn <= 1) {
+                GridEngine.ensureOpeningMatch(saved.grid)
+            } else {
+                saved.grid
+            }
             mode = saved.mode
         }
         saveReady = true
@@ -491,7 +495,7 @@ private fun PerimeterGame() {
                     grid = GridEngine.newGrid()
                     combat = CombatEngine.newGame()
                     mode = InteractionMode.DRILL_REVEAL
-                    status = "Тап: открыть клетку. Свайп: собрать 3 одинаковых открытых боеприпаса."
+                    status = "ПЕРВЫЙ ХОД: свайпни вертикально между двумя центральными цветными клетками."
                 }) {
                     Text("ПОВТОРИТЬ")
                 }
