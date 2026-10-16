@@ -22,6 +22,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +36,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.giksik.perimeterdefense.domain.AmmoColor
+import com.giksik.perimeterdefense.domain.CombatEngine
+import com.giksik.perimeterdefense.domain.CombatEventType
+import com.giksik.perimeterdefense.domain.CombatState
+import com.giksik.perimeterdefense.domain.EnemyType
+import com.giksik.perimeterdefense.domain.EnemyUnit
 import com.giksik.perimeterdefense.domain.CellState
 import com.giksik.perimeterdefense.domain.GridEngine
 import com.giksik.perimeterdefense.domain.InteractionMode
@@ -60,12 +67,8 @@ class MainActivity : ComponentActivity() {
 private fun PerimeterGame() {
     var grid by remember { mutableStateOf(GridEngine.newGrid()) }
     var mode by remember { mutableStateOf(InteractionMode.DRILL_REVEAL) }
-    var wave by remember { mutableStateOf(1) }
-    var baseHp by remember { mutableStateOf(100) }
-    var turns by remember { mutableStateOf(0) }
-    var stun by remember { mutableStateOf(0) }
+    var combat by remember { mutableStateOf(CombatEngine.newGame()) }
     var status by remember { mutableStateOf("Периметр стабилен. Выберите плитку.") }
-    var captured by remember { mutableStateOf(0) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(12.dp),
@@ -74,12 +77,12 @@ private fun PerimeterGame() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Column {
                 Text("PERIMETER DEFENSE", color = Neon, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                Text("WAVE %02d  •  ЧИПЫ %04d".format(wave, captured * 25), color = Color.LightGray, fontSize = 11.sp)
+                Text("WAVE %02d  •  ЧИПЫ %04d".format(combat.wave, combat.chips), color = Color.LightGray, fontSize = 11.sp)
             }
             Text("Ⅱ", color = Color.White, fontSize = 24.sp)
         }
 
-        RadarPanel(baseHp = baseHp, stun = stun, turns = turns)
+        RadarPanel(baseHp = combat.baseHp, stun = combat.turretStunTurns, turns = combat.turn, enemies = combat.enemies)
 
         Text("ЭНЕРГОМАТРИЦА  //  6 × 6", color = Neon, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Column(
@@ -113,10 +116,37 @@ private fun PerimeterGame() {
                                     grid = result.grid
                                     status = result.message
                                     if (result.turnConsumed) {
-                                        turns++
-                                        if (result.detonatedMines > 0) stun = 2 else if (stun > 0) stun--
-                                        if (result.capturedMines > 0) captured += result.capturedMines
-                                        if (result.detonatedMines > 0) baseHp = (baseHp - 5).coerceAtLeast(0)
+                                        var nextCombat = combat
+                                        if (result.detonatedMines > 0) {
+                                            nextCombat = CombatEngine.registerMineDetonation(nextCombat).state
+                                        }
+                                        if (result.capturedMines > 0) {
+                                            nextCombat = nextCombat.copy(chips = nextCombat.chips + result.capturedMines * 25)
+                                            repeat(result.capturedMines) {
+                                                nextCombat = CombatEngine.launchCapturedMine(nextCombat).state
+                                            }
+                                        }
+
+                                        val matchResolution = GridEngine.resolveMatches(result.grid)
+                                        grid = matchResolution.grid
+                                        val attackResult = CombatEngine.resolveMatches(nextCombat, matchResolution.groups)
+                                        nextCombat = CombatEngine.advanceTurn(attackResult.state).state
+                                        combat = nextCombat
+
+                                        if (matchResolution.groups.isNotEmpty()) {
+                                            val matchedCells = matchResolution.groups.sumOf { it.size }
+                                            status += " Серии: ${matchResolution.groups.size}, срабатываний клеток: $matchedCells."
+                                        }
+                                        if (attackResult.events.any { it.type == CombatEventType.ENEMY_DESTROYED }) {
+                                            status += " Враг уничтожен."
+                                        }
+                                        if (attackResult.events.any { it.type == CombatEventType.ENEMY_SLOWED }) {
+                                            status += " Враг замедлен."
+                                        }
+                                        if (result.detonatedMines > 0) {
+                                            status += " Щит повреждён, турели перегружены."
+                                        }
+                                        if (combat.isGameOver) status += " База разрушена."
                                     }
                                 },
                             contentAlignment = Alignment.Center
@@ -168,7 +198,7 @@ private fun PerimeterGame() {
 }
 
 @Composable
-private fun RadarPanel(baseHp: Int, stun: Int, turns: Int) {
+private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUnit>) {
     Column(
         modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, BorderDark, RoundedCornerShape(10.dp)).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp)
@@ -183,7 +213,40 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int) {
                 .border(1.dp, Color(0xFF1F6B55), RoundedCornerShape(6.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text("⌁      ◆       ⌁       ◆      ⌁", color = Color(0xFF3FB950), fontSize = 20.sp)
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                for (progress in (CombatEngine.PATH_LENGTH - 1) downTo 0) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        (0 until GridEngine.GRID_SIZE).forEach { lane ->
+                            val here = enemies.filter { it.lane == lane && it.progress == progress }
+                            val cellColor = when {
+                                here.isEmpty() -> Color(0xFF10262B)
+                                here.any { it.type == EnemyType.BOSS } -> Color(0xFFD29922)
+                                else -> Color(0xFF8B2635)
+                            }
+                            Box(
+                                modifier = Modifier.weight(1f).height(8.dp)
+                                    .background(cellColor, RoundedCornerShape(2.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (here.isNotEmpty()) {
+                                    Text(
+                                        if (here.size > 1) here.size.toString() else "◆",
+                                        color = Color.White,
+                                        fontSize = 7.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text("ЩИТ ПЕРИМЕТРА", color = Color.LightGray, fontSize = 10.sp)
@@ -192,6 +255,7 @@ private fun RadarPanel(baseHp: Int, stun: Int, turns: Int) {
         Box(modifier = Modifier.fillMaxWidth().fillMaxWidth().height(6.dp).background(BorderDark, RoundedCornerShape(4.dp))) {
             Box(modifier = Modifier.fillMaxWidth(baseHp / 100f).size(height = 6.dp, width = 1.dp).background(Color(0xFF3FB950), RoundedCornerShape(4.dp)))
         }
+        Text("ВРАГОВ: ${enemies.size}", color = Color.LightGray, fontSize = 9.sp)
         Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
             Text("🔴 МОРТИРА", color = Color(0xFFE5534B), fontSize = 9.sp)
             Text("🔵 КРИО", color = Color(0xFF58A6FF), fontSize = 9.sp)

@@ -118,4 +118,24 @@ class GridEngineTest {
         assertTrue(GridEngine.findMatchGroups(grid).isEmpty())
     }
 
+    @Test
+    fun resolveMatchesReRollsCellsAndLeavesNoAutomaticRepeat() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                if (row == 0 && col in 0..2) {
+                    GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                } else {
+                    GridCell(row, col)
+                }
+            }
+        }
+
+        val result = GridEngine.resolveMatches(grid, Random(42))
+
+        assertTrue(result.groups.isNotEmpty())
+        assertTrue(result.groups.any { it.size >= 3 })
+        assertTrue(result.cascadesResolved >= 1)
+        assertTrue(GridEngine.findMatchGroups(result.grid).isEmpty())
+    }
+
 }

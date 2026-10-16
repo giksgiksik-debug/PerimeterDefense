@@ -115,4 +115,36 @@ class CombatEngineTest {
         assertEquals(65, result.state.baseHp)
         assertTrue(result.events.any { it.type == CombatEventType.TURRETS_STUNNED })
     }
+    @Test
+    fun newGameCreatesFirstWaveAndEmptyWaveAdvances() {
+        val initial = CombatEngine.newGame()
+        assertEquals(1, initial.wave)
+        assertEquals(3, initial.enemies.size)
+
+        val next = CombatEngine.advanceTurn(initial.copy(enemies = emptyList()))
+        assertEquals(2, next.state.wave)
+        assertEquals(4, next.state.enemies.size)
+    }
+
+    @Test
+    fun mineDetonationDamagesBaseAndStunsTurrets() {
+        val result = CombatEngine.registerMineDetonation(CombatState(baseHp = 50))
+
+        assertEquals(45, result.state.baseHp)
+        assertEquals(2, result.state.turretStunTurns)
+    }
+
+    @Test
+    fun capturedMineDamagesTheMostAdvancedEnemy() {
+        val state = CombatState(enemies = listOf(
+            enemy(id = 1L, progress = 1, health = 50, maxHealth = 50),
+            enemy(id = 2L, progress = 3, health = 50, maxHealth = 50)
+        ))
+
+        val result = CombatEngine.launchCapturedMine(state)
+
+        assertEquals(25, result.state.enemies.first { it.id == 2L }.health)
+        assertEquals(50, result.state.enemies.first { it.id == 1L }.health)
+    }
+
 }

@@ -8,6 +8,91 @@ import kotlin.math.roundToInt
  * so the turn logic can be tested without launching the app.
  */
 object CombatEngine {
+    const val PATH_LENGTH = 5
+
+    fun newGame(): CombatState = spawnWave(CombatState(), wave = 1)
+
+    fun registerMineDetonation(
+        state: CombatState,
+        baseDamage: Int = 5,
+        stunTurns: Int = 2
+    ): CombatResult {
+        if (state.isGameOver) return CombatResult(state)
+        val damage = baseDamage.coerceAtLeast(0)
+        val nextHp = (state.baseHp - damage).coerceAtLeast(0)
+        val nextStun = maxOf(state.turretStunTurns, stunTurns.coerceAtLeast(0))
+        val events = buildList {
+            if (damage > 0) add(CombatEvent(CombatEventType.BASE_DAMAGED, amount = state.baseHp - nextHp))
+            if (nextStun > 0) add(CombatEvent(CombatEventType.TURRETS_STUNNED, amount = nextStun))
+        }
+        return CombatResult(state.copy(baseHp = nextHp, turretStunTurns = nextStun), events)
+    }
+
+    /** A captured mine is launched at the most advanced enemy. */
+    fun launchCapturedMine(state: CombatState, damage: Int = 25): CombatResult {
+        if (state.isGameOver) return CombatResult(state)
+        val target = state.enemies
+            .filter { it.isAlive }
+            .sortedWith(compareByDescending<EnemyUnit> { it.progress }.thenBy { it.id })
+            .firstOrNull() ?: return CombatResult(state)
+        val nextHealth = (target.health - damage.coerceAtLeast(0)).coerceAtLeast(0)
+        val events = mutableListOf(CombatEvent(
+            CombatEventType.ENEMY_DAMAGED, target.id, minOf(target.health, damage.coerceAtLeast(0))
+        ))
+        var nextEnemies = state.enemies
+        var nextChips = state.chips
+        if (nextHealth == 0) {
+            nextEnemies = nextEnemies.filterNot { it.id == target.id }
+            val reward = target.rewardChips.coerceAtLeast(0)
+            nextChips += reward
+            events += CombatEvent(CombatEventType.ENEMY_DESTROYED, target.id, reward)
+        } else {
+            nextEnemies = nextEnemies.map { if (it.id == target.id) it.copy(health = nextHealth) else it }
+        }
+        return CombatResult(state.copy(enemies = nextEnemies, chips = nextChips), events)
+    }
+
+    private fun spawnWave(state: CombatState, wave: Int): CombatState {
+        val safeWave = wave.coerceAtLeast(1)
+        val count = (2 + safeWave).coerceAtMost(6)
+        val enemies = List(count) { index ->
+            val type = when {
+                safeWave % 5 == 0 && index == count - 1 -> EnemyType.BOSS
+                safeWave >= 3 && index % 3 == 2 -> EnemyType.ARMORED
+                safeWave >= 2 && index % 2 == 1 -> EnemyType.RAIDER
+                else -> EnemyType.SCOUT
+            }
+            val health = when (type) {
+                EnemyType.SCOUT -> 18 + safeWave * 4
+                EnemyType.RAIDER -> 28 + safeWave * 5
+                EnemyType.ARMORED -> 45 + safeWave * 7
+                EnemyType.BOSS -> 100 + safeWave * 12
+            }
+            val attack = when (type) {
+                EnemyType.SCOUT -> 5 + safeWave
+                EnemyType.RAIDER -> 7 + safeWave
+                EnemyType.ARMORED -> 10 + safeWave
+                EnemyType.BOSS -> 15 + safeWave * 2
+            }
+            val reward = when (type) {
+                EnemyType.SCOUT -> 10 + safeWave * 3
+                EnemyType.RAIDER -> 15 + safeWave * 4
+                EnemyType.ARMORED -> 25 + safeWave * 5
+                EnemyType.BOSS -> 75 + safeWave * 10
+            }
+            EnemyUnit(
+                id = safeWave * 100L + index + 1,
+                type = type,
+                lane = (index * 2 + safeWave) % GridEngine.GRID_SIZE,
+                progress = 0,
+                health = health,
+                maxHealth = health,
+                attackDamage = attack,
+                rewardChips = reward
+            )
+        }
+        return state.copy(wave = safeWave, enemies = enemies)
+    }
 
     fun resolveMatches(
         initialState: CombatState,
@@ -104,9 +189,14 @@ object CombatEngine {
      */
     fun advanceTurn(
         initialState: CombatState,
-        rules: CombatRules = CombatRules()
+        rules: CombatRules = CombatRules(pathLength = PATH_LENGTH)
     ): CombatResult {
         if (initialState.isGameOver) return CombatResult(initialState)
+        if (initialState.enemies.isEmpty()) {
+            return CombatResult(
+                state = spawnWave(initialState, initialState.wave + 1).copy(turn = initialState.turn + 1)
+            )
+        }
 
         val nextEnemies = mutableListOf<EnemyUnit>()
         val events = mutableListOf<CombatEvent>()

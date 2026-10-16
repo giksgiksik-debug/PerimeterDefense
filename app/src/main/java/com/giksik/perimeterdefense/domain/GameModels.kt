@@ -42,3 +42,10 @@ data class MatchGroup(
             else -> 1.0
         }
 }
+
+
+data class GridMatchResolution(
+    val grid: List<List<GridCell>>,
+    val groups: List<MatchGroup>,
+    val cascadesResolved: Int
+)

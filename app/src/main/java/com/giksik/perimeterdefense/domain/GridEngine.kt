@@ -194,6 +194,54 @@ object GridEngine {
     fun findMatches(grid: List<List<GridCell>>): Set<Pair<Int, Int>> =
         findMatchGroups(grid).flatMapTo(mutableSetOf()) { it.cells }
 
+    /**
+     * Resolves all current matches in batches. Cells are re-rolled only after the
+     * complete batch is identified, so coordinates from one batch never go stale
+     * while another group is being processed.
+     */
+    fun resolveMatches(
+        grid: List<List<GridCell>>,
+        random: Random = Random.Default
+    ): GridMatchResolution {
+        var currentGrid = grid
+        val allGroups = mutableListOf<MatchGroup>()
+        var cascades = 0
+        val maxCascades = 12
+
+        while (cascades < maxCascades) {
+            val groups = findMatchGroups(currentGrid)
+            if (groups.isEmpty()) break
+
+            allGroups.addAll(groups)
+            cascades++
+            val matchedCells = groups.flatMapTo(mutableSetOf()) { it.cells }
+
+            currentGrid = currentGrid.mapIndexed { row, cells ->
+                cells.mapIndexed { col, cell ->
+                    if ((row to col) in matchedCells) {
+                        cell.copy(ammoColor = randomAmmo(random))
+                    } else {
+                        cell
+                    }
+                }
+            }
+        }
+
+        // Keep resolution bounded even with an unlucky random sequence.
+        // The remaining pieces are spent instead of re-firing on every turn.
+        val leftovers = findMatchGroups(currentGrid)
+        if (leftovers.isNotEmpty()) {
+            val leftoverCells = leftovers.flatMapTo(mutableSetOf()) { it.cells }
+            currentGrid = currentGrid.mapIndexed { row, cells ->
+                cells.mapIndexed { col, cell ->
+                    if ((row to col) in leftoverCells) cell.copy(ammoColor = AmmoColor.NONE) else cell
+                }
+            }
+        }
+
+        return GridMatchResolution(currentGrid, allGroups, cascades)
+    }
+
     private fun randomAmmo(random: Random): AmmoColor {
         val roll = random.nextInt(100)
         return when {
