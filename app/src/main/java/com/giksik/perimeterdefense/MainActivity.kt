@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -201,6 +202,7 @@ private fun PerimeterGame() {
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = maxHeight < 820.dp
+        val matrixSize = minOf(maxWidth - 20.dp, maxHeight - 325.dp).coerceAtLeast(230.dp)
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 10.dp),
             verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 10.dp)
@@ -231,10 +233,11 @@ private fun PerimeterGame() {
             fontWeight = FontWeight.Black,
             maxLines = 1
         )
-        Column(
-            modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Column(
+                modifier = Modifier.width(matrixSize).background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(6.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
             grid.forEachIndexed { rowIndex, row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     row.forEachIndexed { colIndex, cell ->
@@ -316,6 +319,7 @@ private fun PerimeterGame() {
                     }
                 }
             }
+        }
         }
 
         Text(status, color = Color(0xFFB1BAC4), fontSize = if (compact) 9.sp else 11.sp, maxLines = 2)
