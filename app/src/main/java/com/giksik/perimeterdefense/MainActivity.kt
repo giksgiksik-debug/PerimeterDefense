@@ -195,6 +195,24 @@ private fun PerimeterGame() {
             Booster("РЕМОНТ", "+15", Modifier.weight(1f))
         }
     }
+
+    if (combat.isGameOver) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("БАЗА УНИЧТОЖЕНА") },
+            text = { Text("Волна: ${combat.wave}. Чипы: ${combat.chips}. Попробуйте другую тактику.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    grid = GridEngine.newGrid()
+                    combat = CombatEngine.newGame()
+                    mode = InteractionMode.DRILL_REVEAL
+                    status = "Периметр стабилен. Выберите плитку."
+                }) {
+                    Text("ПОВТОРИТЬ")
+                }
+            }
+        )
+    }
 }
 
 @Composable
