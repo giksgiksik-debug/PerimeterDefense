@@ -41,6 +41,32 @@ object GridEngine {
         return recalculateAdjacentMines(grid)
     }
 
+    /**
+     * Repairs legacy wave-one saves from before the guaranteed opening pattern.
+     * Only the six always-safe, already revealed cells can be adjusted.
+     */
+    fun ensureOpeningMatch(grid: List<List<GridCell>>): List<List<GridCell>> {
+        if (grid.size != GRID_SIZE || grid.any { it.size != GRID_SIZE }) return grid
+        val safeCells = (2..3).flatMap { row -> (2..4).map { col -> row to col } }
+        if (safeCells.any { (row, col) ->
+                grid[row][col].state != CellState.REVEALED || grid[row][col].hasMine
+            }
+        ) return grid
+
+        return grid.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                if (row in 2..3 && col in 2..4) {
+                    cell.copy(
+                        ammoColor = when {
+                            (row == 2 && col == 3) || (row == 3 && col != 3) -> AmmoColor.BLUE
+                            else -> AmmoColor.RED
+                        }
+                    )
+                } else cell
+            }
+        }
+    }
+
     fun recalculateAdjacentMines(grid: List<List<GridCell>>): List<List<GridCell>> =
         grid.mapIndexed { row, cells ->
             cells.mapIndexed { col, cell ->
