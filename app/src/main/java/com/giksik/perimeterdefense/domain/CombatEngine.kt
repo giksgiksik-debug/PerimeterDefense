@@ -8,14 +8,14 @@ import kotlin.math.roundToInt
  * so the turn logic can be tested without launching the app.
  */
 object CombatEngine {
-    const val PATH_LENGTH = 5
+    const val PATH_LENGTH = 7
 
     fun newGame(): CombatState = spawnWave(CombatState(), wave = 1)
 
     fun registerMineDetonation(
         state: CombatState,
-        baseDamage: Int = 5,
-        stunTurns: Int = 2
+        baseDamage: Int = 3,
+        stunTurns: Int = 1
     ): CombatResult {
         if (state.isGameOver) return CombatResult(state)
         val damage = baseDamage.coerceAtLeast(0)
@@ -29,15 +29,16 @@ object CombatEngine {
     }
 
     /** A captured mine is launched at the most advanced enemy. */
-    fun launchCapturedMine(state: CombatState, damage: Int = 25): CombatResult {
+    fun launchCapturedMine(state: CombatState, damage: Int = 35): CombatResult {
         if (state.isGameOver) return CombatResult(state)
         val target = state.enemies
             .filter { it.isAlive }
             .sortedWith(compareByDescending<EnemyUnit> { it.progress }.thenBy { it.id })
             .firstOrNull() ?: return CombatResult(state)
-        val nextHealth = (target.health - damage.coerceAtLeast(0)).coerceAtLeast(0)
+        val appliedDamage = damage.coerceAtLeast(0)
+        val nextHealth = (target.health - appliedDamage).coerceAtLeast(0)
         val events = mutableListOf(CombatEvent(
-            CombatEventType.ENEMY_DAMAGED, target.id, minOf(target.health, damage.coerceAtLeast(0))
+            CombatEventType.ENEMY_DAMAGED, target.id, minOf(target.health, appliedDamage), AmmoColor.RED
         ))
         var nextEnemies = state.enemies
         var nextChips = state.chips
@@ -64,7 +65,7 @@ object CombatEngine {
     }
 
     /** Damages every active enemy; rewards are granted only for destroyed units. */
-    fun launchAirstrike(state: CombatState, damage: Int = 18): CombatResult {
+    fun launchAirstrike(state: CombatState, damage: Int = 35): CombatResult {
         if (state.isGameOver || state.enemies.isEmpty()) return CombatResult(state)
         val appliedDamage = damage.coerceAtLeast(0)
         val events = mutableListOf<CombatEvent>()
@@ -104,16 +105,16 @@ object CombatEngine {
                 else -> EnemyType.SCOUT
             }
             val health = when (type) {
-                EnemyType.SCOUT -> 18 + safeWave * 4
-                EnemyType.RAIDER -> 28 + safeWave * 5
-                EnemyType.ARMORED -> 45 + safeWave * 7
-                EnemyType.BOSS -> 100 + safeWave * 12
+                EnemyType.SCOUT -> 15 + safeWave * 3
+                EnemyType.RAIDER -> 20 + safeWave * 4
+                EnemyType.ARMORED -> 34 + safeWave * 5
+                EnemyType.BOSS -> 80 + safeWave * 10
             }
             val attack = when (type) {
-                EnemyType.SCOUT -> 5 + safeWave
-                EnemyType.RAIDER -> 7 + safeWave
-                EnemyType.ARMORED -> 10 + safeWave
-                EnemyType.BOSS -> 15 + safeWave * 2
+                EnemyType.SCOUT -> 4 + safeWave
+                EnemyType.RAIDER -> 5 + safeWave
+                EnemyType.ARMORED -> 8 + safeWave
+                EnemyType.BOSS -> 12 + safeWave * 2
             }
             val reward = when (type) {
                 EnemyType.SCOUT -> 10 + safeWave * 3
