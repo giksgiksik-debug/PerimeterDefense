@@ -43,7 +43,7 @@ class CombatEngineTest {
 
         val result = CombatEngine.resolveMatches(state, listOf(group(AmmoColor.RED, size = 4)))
 
-        assertEquals(20, result.state.enemies.single().health)
+        assertEquals(5, result.state.enemies.single().health)
     }
 
     @Test
@@ -52,8 +52,8 @@ class CombatEngineTest {
 
         val result = CombatEngine.resolveMatches(state, listOf(group(AmmoColor.BLUE)))
 
-        assertEquals(42, result.state.enemies.single().health)
-        assertEquals(1, result.state.enemies.single().slowTurns)
+        assertEquals(36, result.state.enemies.single().health)
+        assertEquals(2, result.state.enemies.single().slowTurns)
         assertTrue(result.events.any { it.type == CombatEventType.ENEMY_SLOWED })
     }
 
@@ -67,8 +67,8 @@ class CombatEngineTest {
 
         val result = CombatEngine.resolveMatches(state, listOf(group(AmmoColor.YELLOW)))
 
-        assertEquals(38, result.state.enemies.first { it.id == 1L }.health)
-        assertEquals(38, result.state.enemies.first { it.id == 2L }.health)
+        assertEquals(32, result.state.enemies.first { it.id == 1L }.health)
+        assertEquals(32, result.state.enemies.first { it.id == 2L }.health)
         assertEquals(50, result.state.enemies.first { it.id == 3L }.health)
     }
 
@@ -86,7 +86,7 @@ class CombatEngineTest {
     fun slowedEnemyLosesMovementTurnAndEnemyAtBaseDamagesShield() {
         val state = CombatState(baseHp = 30, enemies = listOf(
             enemy(id = 1L, progress = 2, slowTurns = 1),
-            enemy(id = 2L, progress = 4, attackDamage = 12)
+            enemy(id = 2L, progress = CombatEngine.PATH_LENGTH - 1, attackDamage = 12)
         ))
 
         val result = CombatEngine.advanceTurn(state)
@@ -130,8 +130,8 @@ class CombatEngineTest {
     fun mineDetonationDamagesBaseAndStunsTurrets() {
         val result = CombatEngine.registerMineDetonation(CombatState(baseHp = 50))
 
-        assertEquals(45, result.state.baseHp)
-        assertEquals(2, result.state.turretStunTurns)
+        assertEquals(47, result.state.baseHp)
+        assertEquals(1, result.state.turretStunTurns)
     }
 
     @Test
@@ -143,7 +143,7 @@ class CombatEngineTest {
 
         val result = CombatEngine.launchCapturedMine(state)
 
-        assertEquals(25, result.state.enemies.first { it.id == 2L }.health)
+        assertEquals(15, result.state.enemies.first { it.id == 2L }.health)
         assertEquals(50, result.state.enemies.first { it.id == 1L }.health)
     }
 
@@ -157,7 +157,7 @@ class CombatEngineTest {
         val result = CombatEngine.launchAirstrike(state)
 
         assertEquals(listOf(2L), result.state.enemies.map { it.id })
-        assertEquals(32, result.state.enemies.single().health)
+        assertEquals(15, result.state.enemies.single().health)
         assertEquals(15, result.state.chips)
         assertEquals(1, result.events.count { it.type == CombatEventType.ENEMY_DESTROYED })
     }

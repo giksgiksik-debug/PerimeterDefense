@@ -2,9 +2,9 @@ name: Android CI
 
 on:
   push:
-    branches: [main, milestone-1-core-grid]
+    branches: [main, milestone-1-core-grid, feature/neon-sci-fi-visuals]
   pull_request:
-    branches: [main]
+    branches: [main, milestone-1-core-grid]
   workflow_dispatch:
 
 permissions:

@@ -44,6 +44,13 @@ data class MatchGroup(
 }
 
 
+/** Result of swapping two adjacent revealed ammunition cells. */
+data class GridSwapResult(
+    val grid: List<List<GridCell>>,
+    val accepted: Boolean,
+    val message: String
+)
+
 data class GridMatchResolution(
     val grid: List<List<GridCell>>,
     val groups: List<MatchGroup>,

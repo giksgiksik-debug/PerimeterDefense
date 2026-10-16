@@ -8,14 +8,14 @@ import kotlin.math.roundToInt
  * so the turn logic can be tested without launching the app.
  */
 object CombatEngine {
-    const val PATH_LENGTH = 5
+    const val PATH_LENGTH = 7
 
     fun newGame(): CombatState = spawnWave(CombatState(), wave = 1)
 
     fun registerMineDetonation(
         state: CombatState,
-        baseDamage: Int = 5,
-        stunTurns: Int = 2
+        baseDamage: Int = 3,
+        stunTurns: Int = 1
     ): CombatResult {
         if (state.isGameOver) return CombatResult(state)
         val damage = baseDamage.coerceAtLeast(0)
@@ -29,15 +29,16 @@ object CombatEngine {
     }
 
     /** A captured mine is launched at the most advanced enemy. */
-    fun launchCapturedMine(state: CombatState, damage: Int = 25): CombatResult {
+    fun launchCapturedMine(state: CombatState, damage: Int = 35): CombatResult {
         if (state.isGameOver) return CombatResult(state)
         val target = state.enemies
             .filter { it.isAlive }
             .sortedWith(compareByDescending<EnemyUnit> { it.progress }.thenBy { it.id })
             .firstOrNull() ?: return CombatResult(state)
-        val nextHealth = (target.health - damage.coerceAtLeast(0)).coerceAtLeast(0)
+        val appliedDamage = damage.coerceAtLeast(0)
+        val nextHealth = (target.health - appliedDamage).coerceAtLeast(0)
         val events = mutableListOf(CombatEvent(
-            CombatEventType.ENEMY_DAMAGED, target.id, minOf(target.health, damage.coerceAtLeast(0))
+            CombatEventType.ENEMY_DAMAGED, target.id, minOf(target.health, appliedDamage), AmmoColor.RED
         ))
         var nextEnemies = state.enemies
         var nextChips = state.chips
@@ -45,7 +46,7 @@ object CombatEngine {
             nextEnemies = nextEnemies.filterNot { it.id == target.id }
             val reward = target.rewardChips.coerceAtLeast(0)
             nextChips += reward
-            events += CombatEvent(CombatEventType.ENEMY_DESTROYED, target.id, reward)
+            events += CombatEvent(CombatEventType.ENEMY_DESTROYED, target.id, reward, AmmoColor.RED)
         } else {
             nextEnemies = nextEnemies.map { if (it.id == target.id) it.copy(health = nextHealth) else it }
         }
@@ -64,7 +65,7 @@ object CombatEngine {
     }
 
     /** Damages every active enemy; rewards are granted only for destroyed units. */
-    fun launchAirstrike(state: CombatState, damage: Int = 18): CombatResult {
+    fun launchAirstrike(state: CombatState, damage: Int = 35): CombatResult {
         if (state.isGameOver || state.enemies.isEmpty()) return CombatResult(state)
         val appliedDamage = damage.coerceAtLeast(0)
         val events = mutableListOf<CombatEvent>()
@@ -104,16 +105,16 @@ object CombatEngine {
                 else -> EnemyType.SCOUT
             }
             val health = when (type) {
-                EnemyType.SCOUT -> 18 + safeWave * 4
-                EnemyType.RAIDER -> 28 + safeWave * 5
-                EnemyType.ARMORED -> 45 + safeWave * 7
-                EnemyType.BOSS -> 100 + safeWave * 12
+                EnemyType.SCOUT -> 15 + safeWave * 3
+                EnemyType.RAIDER -> 20 + safeWave * 4
+                EnemyType.ARMORED -> 34 + safeWave * 5
+                EnemyType.BOSS -> 80 + safeWave * 10
             }
             val attack = when (type) {
-                EnemyType.SCOUT -> 5 + safeWave
-                EnemyType.RAIDER -> 7 + safeWave
-                EnemyType.ARMORED -> 10 + safeWave
-                EnemyType.BOSS -> 15 + safeWave * 2
+                EnemyType.SCOUT -> 4 + safeWave
+                EnemyType.RAIDER -> 5 + safeWave
+                EnemyType.ARMORED -> 8 + safeWave
+                EnemyType.BOSS -> 12 + safeWave * 2
             }
             val reward = when (type) {
                 EnemyType.SCOUT -> 10 + safeWave * 3
@@ -147,16 +148,16 @@ object CombatEngine {
         var chips = initialState.chips
         val events = mutableListOf<CombatEvent>()
 
-        fun damageEnemy(enemyId: Long, damage: Int) {
+        fun damageEnemy(enemyId: Long, damage: Int, weaponColor: AmmoColor) {
             val enemy = enemies.firstOrNull { it.id == enemyId } ?: return
             val appliedDamage = damage.coerceAtLeast(0)
             val remainingHealth = (enemy.health - appliedDamage).coerceAtLeast(0)
-            events += CombatEvent(CombatEventType.ENEMY_DAMAGED, enemyId, minOf(enemy.health, appliedDamage))
+            events += CombatEvent(CombatEventType.ENEMY_DAMAGED, enemyId, minOf(enemy.health, appliedDamage), weaponColor)
 
             if (remainingHealth == 0) {
                 enemies = enemies.filterNot { it.id == enemyId }
                 chips += enemy.rewardChips.coerceAtLeast(0)
-                events += CombatEvent(CombatEventType.ENEMY_DESTROYED, enemyId, enemy.rewardChips.coerceAtLeast(0))
+                events += CombatEvent(CombatEventType.ENEMY_DESTROYED, enemyId, enemy.rewardChips.coerceAtLeast(0), weaponColor)
             } else {
                 enemies = enemies.map {
                     if (it.id == enemyId) it.copy(health = remainingHealth) else it
@@ -190,9 +191,9 @@ object CombatEngine {
                 .firstOrNull() ?: continue
 
             when (group.ammoColor) {
-                AmmoColor.RED -> damageEnemy(target.id, scaledDamage(rules.mortarDamage, group))
+                AmmoColor.RED -> damageEnemy(target.id, scaledDamage(rules.mortarDamage, group), AmmoColor.RED)
                 AmmoColor.BLUE -> {
-                    damageEnemy(target.id, scaledDamage(rules.cryoDamage, group))
+                    damageEnemy(target.id, scaledDamage(rules.cryoDamage, group), AmmoColor.BLUE)
                     enemies = enemies.map {
                         if (it.id == target.id) it.copy(slowTurns = maxOf(it.slowTurns, rules.cryoSlowTurns))
                         else it
@@ -208,7 +209,7 @@ object CombatEngine {
                                 abs(it.progress - target.progress) <= rules.teslaProgressRadius
                         }
                         .map { it.id }
-                    targetIds.forEach { id -> damageEnemy(id, scaledDamage(rules.teslaDamage, group)) }
+                    targetIds.forEach { id -> damageEnemy(id, scaledDamage(rules.teslaDamage, group), AmmoColor.YELLOW) }
                 }
                 AmmoColor.GREEN_HEAL, AmmoColor.NONE -> Unit
             }

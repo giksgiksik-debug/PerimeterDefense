@@ -138,4 +138,91 @@ class GridEngineTest {
         assertTrue(GridEngine.findMatchGroups(result.grid).isEmpty())
     }
 
+
+    @Test
+    fun adjacentSwapThatCreatesMatchIsAccepted() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                when {
+                    row == 0 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    row == 1 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.BLUE)
+                    row == 1 && col == 1 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    row == 2 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    else -> GridCell(row, col)
+                }
+            }
+        }
+
+        val result = GridEngine.swapAdjacent(grid, 1, 1, 1, 0)
+
+        assertTrue(result.accepted)
+        assertEquals(AmmoColor.RED, result.grid[1][0].ammoColor)
+        assertEquals(AmmoColor.BLUE, result.grid[1][1].ammoColor)
+        assertTrue(GridEngine.findMatchGroups(result.grid).any { it.cells.containsAll(setOf(0 to 0, 1 to 0, 2 to 0)) })
+    }
+
+    @Test
+    fun adjacentSwapWithoutMatchIsRejectedAndGridStaysUnchanged() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                if (row == 0 && col in 0..1) {
+                    GridCell(
+                        row, col, state = CellState.REVEALED,
+                        ammoColor = if (col == 0) AmmoColor.RED else AmmoColor.BLUE
+                    )
+                } else GridCell(row, col)
+            }
+        }
+
+        val result = GridEngine.swapAdjacent(grid, 0, 0, 0, 1)
+
+        assertFalse(result.accepted)
+        assertEquals(grid, result.grid)
+    }
+
+
+    @Test
+    fun newGameAlwaysStartsWithAValidMatchThreeSwipe() {
+        val grid = GridEngine.newGrid(Random(123))
+
+        // The central safe area is a red/blue checker pattern:
+        // swapping the two middle cells creates one red row and one blue row.
+        val result = GridEngine.swapAdjacent(grid, 2, 3, 3, 3)
+
+        assertTrue(result.accepted)
+        assertEquals(AmmoColor.RED, result.grid[2][3].ammoColor)
+        assertEquals(AmmoColor.BLUE, result.grid[3][3].ammoColor)
+        assertTrue(
+            GridEngine.findMatchGroups(result.grid).any { it.ammoColor == AmmoColor.RED && it.size >= 3 }
+        )
+        assertTrue(
+            GridEngine.findMatchGroups(result.grid).any { it.ammoColor == AmmoColor.BLUE && it.size >= 3 }
+        )
+    }
+
+
+
+    @Test
+    fun legacyFirstWaveGridGetsAPlayableOpeningMatch() {
+        val initial = GridEngine.newGrid(Random(321))
+        val legacy = initial.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                if (row in 2..3 && col in 2..4) {
+                    cell.copy(ammoColor = AmmoColor.YELLOW)
+                } else cell
+            }
+        }
+
+        val migrated = GridEngine.ensureOpeningMatch(legacy)
+        val swap = GridEngine.swapAdjacent(migrated, 2, 3, 3, 3)
+
+        assertTrue(swap.accepted)
+        assertTrue(GridEngine.findMatchGroups(swap.grid).any { it.size >= 3 })
+    }
+
+
 }

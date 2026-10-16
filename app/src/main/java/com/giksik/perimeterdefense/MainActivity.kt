@@ -6,8 +6,11 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -28,31 +32,41 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+import kotlin.math.floor
 import com.giksik.perimeterdefense.data.GamePersistence
 import com.giksik.perimeterdefense.data.SavedGame
 import com.giksik.perimeterdefense.domain.AmmoColor
 import com.giksik.perimeterdefense.domain.CombatEngine
+import com.giksik.perimeterdefense.domain.CombatEvent
 import com.giksik.perimeterdefense.domain.CombatEventType
 import com.giksik.perimeterdefense.domain.CombatState
 import com.giksik.perimeterdefense.domain.EnemyType
 import com.giksik.perimeterdefense.domain.EnemyUnit
 import com.giksik.perimeterdefense.domain.CellState
 import com.giksik.perimeterdefense.domain.GridEngine
+import com.giksik.perimeterdefense.domain.GridResult
 import com.giksik.perimeterdefense.domain.InteractionMode
 
-private val Background = Color(0xFF0D1117)
-private val SurfaceDark = Color(0xFF161B22)
-private val BorderDark = Color(0xFF30363D)
-private val Neon = Color(0xFF58A6FF)
+private val Background = Color(0xFF070B13)
+private val SurfaceDark = Color(0xE6101B2A)
+private val BorderDark = Color(0xFF244454)
+private val Neon = Color(0xFF00E5FF)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,7 +74,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = Background) {
-                    PerimeterGame()
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        NeonBackdrop()
+                        PerimeterGame()
+                    }
                 }
             }
         }
@@ -71,17 +88,59 @@ class MainActivity : ComponentActivity() {
 private fun PerimeterGame() {
     val appContext = LocalContext.current.applicationContext
     val persistence = remember { GamePersistence(appContext) }
+    val audioPreferences = remember { appContext.getSharedPreferences("perimeter_audio", 0) }
+    var soundEnabled by remember { mutableStateOf(audioPreferences.getBoolean("sound_enabled", true)) }
     var saveReady by remember { mutableStateOf(false) }
     var grid by remember { mutableStateOf(GridEngine.newGrid()) }
     var mode by remember { mutableStateOf(InteractionMode.DRILL_REVEAL) }
     var combat by remember { mutableStateOf(CombatEngine.newGame()) }
-    var status by remember { mutableStateOf("Периметр стабилен. Выберите плитку.") }
+    var status by remember { mutableStateOf("ПЕРВЫЙ ХОД: свайпни вертикально между двумя центральными цветными клетками.") }
+    var visualEvents by remember { mutableStateOf<List<CombatEvent>>(emptyList()) }
+    var visualTargets by remember { mutableStateOf<List<EnemyUnit>>(emptyList()) }
+    var visualEffectKey by remember { mutableStateOf(0) }
+    var shakeOffsetX by remember { mutableFloatStateOf(0f) }
+    var shakeOffsetY by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current.density
+
+    LaunchedEffect(soundEnabled) {
+        TacticalSoundSynth.soundEnabled = soundEnabled
+        audioPreferences.edit().putBoolean("sound_enabled", soundEnabled).apply()
+    }
+
+    LaunchedEffect(visualEffectKey) {
+        val hasImpact = visualEffectKey > 0 && visualEvents.any {
+            it.type == CombatEventType.ENEMY_DAMAGED ||
+                it.type == CombatEventType.ENEMY_DESTROYED ||
+                it.type == CombatEventType.BASE_DAMAGED ||
+                it.type == CombatEventType.BASE_REPAIRED ||
+                it.type == CombatEventType.TURRETS_STUNNED
+        }
+        if (hasImpact) {
+            val start = withFrameNanos { it }
+            var now = start
+            val durationNanos = 300_000_000L
+            while (now - start < durationNanos) {
+                val progress = ((now - start).toFloat() / durationNanos).coerceIn(0f, 1f)
+                val amplitude = 8.5f * density * (1f - progress) * (1f - progress)
+                val elapsed = (now - start).toDouble()
+                shakeOffsetX = kotlin.math.sin(elapsed / 38_000_000.0 * 2.0 * Math.PI).toFloat() * amplitude
+                shakeOffsetY = kotlin.math.cos(elapsed / 31_000_000.0 * 2.0 * Math.PI).toFloat() * amplitude * 0.58f
+                now = withFrameNanos { it }
+            }
+        }
+        shakeOffsetX = 0f
+        shakeOffsetY = 0f
+    }
 
     LaunchedEffect(Unit) {
         val saved = persistence.load()
         if (saved != null) {
-            grid = saved.grid
             combat = saved.combat
+            grid = if (saved.combat.wave == 1 && saved.combat.turn <= 1) {
+                GridEngine.ensureOpeningMatch(saved.grid)
+            } else {
+                saved.grid
+            }
             mode = saved.mode
         }
         saveReady = true
@@ -91,142 +150,337 @@ private fun PerimeterGame() {
         if (saveReady) persistence.save(SavedGame(grid = grid, combat = combat, mode = mode))
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Column {
-                Text("PERIMETER DEFENSE", color = Neon, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                Text("WAVE %02d  •  ЧИПЫ %04d".format(combat.wave, combat.chips), color = Color.LightGray, fontSize = 11.sp)
+    fun applyGridResult(result: GridResult) {
+        grid = result.grid
+        status = result.message
+        if (!result.turnConsumed) return
+
+        var nextCombat = combat
+        val turnVisualEvents = mutableListOf<CombatEvent>()
+        val visualCandidates = LinkedHashMap<Long, EnemyUnit>().apply {
+            putAll(combat.enemies.associateBy { it.id })
+        }
+        if (result.detonatedMines > 0) {
+            TacticalSoundSynth.playHeavyExplosion()
+            val detonation = CombatEngine.registerMineDetonation(nextCombat)
+            nextCombat = detonation.state
+            turnVisualEvents += detonation.events
+        }
+        if (result.capturedMines > 0) {
+            TacticalSoundSynth.playMineCatapult()
+            nextCombat = nextCombat.copy(chips = nextCombat.chips + result.capturedMines * 25)
+            repeat(result.capturedMines) {
+                visualCandidates.putAll(nextCombat.enemies.associateBy { it.id })
+                val capturedShot = CombatEngine.launchCapturedMine(nextCombat)
+                nextCombat = capturedShot.state
+                turnVisualEvents += capturedShot.events
             }
-            Text("Ⅱ", color = Color.White, fontSize = 24.sp)
         }
 
-        RadarPanel(baseHp = combat.baseHp, stun = combat.turretStunTurns, turns = combat.turn, enemies = combat.enemies)
+        val matchResolution = GridEngine.resolveMatches(result.grid)
+        matchResolution.groups.take(3).forEach { group ->
+            TacticalSoundSynth.playTurretFire(group.ammoColor)
+        }
+        if (matchResolution.groups.isEmpty() && result.detonatedMines == 0 && result.capturedMines == 0) {
+            TacticalSoundSynth.playArmorClick()
+        }
+        grid = matchResolution.grid
+        visualCandidates.putAll(nextCombat.enemies.associateBy { it.id })
+        val attackResult = CombatEngine.resolveMatches(nextCombat, matchResolution.groups)
+        turnVisualEvents += attackResult.events
+        visualCandidates.putAll(attackResult.state.enemies.associateBy { it.id })
+        val advanceResult = CombatEngine.advanceTurn(attackResult.state)
+        turnVisualEvents += advanceResult.events
+        nextCombat = advanceResult.state
+        combat = nextCombat
 
-        Text("ЭНЕРГОМАТРИЦА  //  6 × 6", color = Neon, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        val hasVisibleCombatFx = turnVisualEvents.any {
+            it.type == CombatEventType.ENEMY_DAMAGED ||
+                it.type == CombatEventType.ENEMY_DESTROYED ||
+                it.type == CombatEventType.BASE_DAMAGED ||
+                it.type == CombatEventType.BASE_REPAIRED ||
+                it.type == CombatEventType.TURRETS_STUNNED
+        }
+        if (hasVisibleCombatFx) {
+            visualEvents = turnVisualEvents.toList()
+            val targetIds = turnVisualEvents.mapNotNull { it.enemyId }.toSet()
+            visualTargets = visualCandidates.values.filter { it.id in targetIds }
+            visualEffectKey += 1
+        }
+
+        if (matchResolution.groups.isNotEmpty()) {
+            val matchedCells = matchResolution.groups.sumOf { it.size }
+            status += " Серии: ${matchResolution.groups.size}, клеток: $matchedCells."
+        }
+        if (attackResult.events.any { it.type == CombatEventType.ENEMY_DESTROYED }) {
+            status += " Враг уничтожен."
+        }
+        if (attackResult.events.any { it.type == CombatEventType.ENEMY_SLOWED }) {
+            status += " Враг замедлен."
+        }
+        if (result.detonatedMines > 0) {
+            status += " Щит повреждён, турели перегружены."
+        }
+        if (nextCombat.isGameOver) status += " База разрушена."
+    }
+
+    fun handleCellTap(row: Int, col: Int) {
+        val result = if (mode == InteractionMode.DRILL_REVEAL) {
+            GridEngine.reveal(grid, row, col)
+        } else {
+            GridEngine.capture(grid, row, col)
+        }
+        applyGridResult(result)
+    }
+
+    fun handleSwipe(row1: Int, col1: Int, row2: Int, col2: Int) {
+        // Match-3 is a direct gesture and must work even when the capture tool was selected.
+        val swap = GridEngine.swapAdjacent(grid, row1, col1, row2, col2)
+        status = swap.message
+        if (!swap.accepted) TacticalSoundSynth.playErrorBuzz()
+        if (swap.accepted) {
+            applyGridResult(
+                GridResult(
+                    grid = swap.grid,
+                    revealedCells = 2,
+                    turnConsumed = true,
+                    message = swap.message
+                )
+            )
+        }
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val compact = maxHeight < 820.dp
         Column(
-            modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, BorderDark, RoundedCornerShape(10.dp)).padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 10.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 10.dp)
         ) {
-            grid.forEachIndexed { rowIndex, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    row.forEachIndexed { colIndex, cell ->
-                        val tileColor = when {
-                            cell.state == CellState.HIDDEN -> Color(0xFF252D38)
-                            cell.hasMine -> Color(0xFF6E2630)
-                            else -> when (cell.ammoColor) {
-                                AmmoColor.RED -> Color(0xFFE5534B)
-                                AmmoColor.BLUE -> Color(0xFF388BFD)
-                                AmmoColor.YELLOW -> Color(0xFFD29922)
-                                AmmoColor.GREEN_HEAL -> Color(0xFF3FB950)
-                                AmmoColor.NONE -> Color(0xFF30363D)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column {
+                    Text("PERIMETER // DEFENSE", color = Neon, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        "TACTICAL NETWORK ONLINE  •  WAVE %02d  •  CR %04d".format(combat.wave, combat.chips),
+                        color = Color(0xFF9CB8C8), fontSize = 9.sp, fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        if (soundEnabled) "♫" else "♪",
+                        color = if (soundEnabled) Neon else Color(0xFF8293A2),
+                        fontSize = 23.sp,
+                        modifier = Modifier.clickable { soundEnabled = !soundEnabled }
+                    )
+                    Text("Ⅱ", color = Color.White, fontSize = 24.sp)
+                }
+            }
+
+            RadarPanel(
+                baseHp = combat.baseHp,
+                stun = combat.turretStunTurns,
+                turns = combat.turn,
+                enemies = combat.enemies,
+                effectEvents = visualEvents,
+                effectTargets = visualTargets,
+                effectKey = visualEffectKey,
+                compact = compact,
+                shakeOffsetX = shakeOffsetX,
+                shakeOffsetY = shakeOffsetY
+            )
+
+            Text(
+                "ENERGY MATRIX  //  6 × 6  •  СВАЙП 3+",
+                color = Neon,
+                fontSize = if (compact) 10.sp else 12.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1
+            )
+
+            // Board takes only the space left between radar and the fixed bottom controls.
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth().weight(1f).graphicsLayer {
+                    translationX = shakeOffsetX
+                    translationY = shakeOffsetY
+                },
+                contentAlignment = Alignment.Center
+            ) {
+                val matrixSize = minOf(maxWidth - 4.dp, maxHeight - 2.dp).coerceAtLeast(160.dp)
+                Box(
+                    modifier = Modifier.size(matrixSize)
+                        .pointerInput(grid, mode) {
+                            val boardWidthPx = size.width.toFloat()
+                            val boardHeightPx = size.height.toFloat()
+                            val insetPx = 6.dp.toPx()
+                            val gapPx = 5.dp.toPx()
+                            val tileWidthPx = ((boardWidthPx - insetPx * 2f - gapPx * 5f) / 6f).coerceAtLeast(1f)
+                            val tileHeightPx = ((boardHeightPx - insetPx * 2f - gapPx * 5f) / 6f).coerceAtLeast(1f)
+
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var endPosition = down.position
+                                var stillPressed = true
+                                var cancelled = false
+                                while (stillPressed) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change == null) {
+                                        cancelled = true
+                                        break
+                                    }
+                                    endPosition = change.position
+                                    stillPressed = change.pressed
+                                    change.consume()
+                                }
+
+                                if (!cancelled) {
+                                    fun columnAt(x: Float): Int =
+                                        floor((x - insetPx) / (tileWidthPx + gapPx)).toInt().coerceIn(0, 5)
+                                    fun rowAt(y: Float): Int =
+                                        floor((y - insetPx) / (tileHeightPx + gapPx)).toInt().coerceIn(0, 5)
+
+                                    val startRow = rowAt(down.position.y)
+                                    val startCol = columnAt(down.position.x)
+                                    val dx = endPosition.x - down.position.x
+                                    val dy = endPosition.y - down.position.y
+                                    val threshold = 14.dp.toPx()
+
+                                    if (maxOf(abs(dx), abs(dy)) >= threshold) {
+                                        if (abs(dx) >= abs(dy)) {
+                                            handleSwipe(startRow, startCol, startRow, startCol + if (dx > 0) 1 else -1)
+                                        } else {
+                                            handleSwipe(startRow, startCol, startRow + if (dy > 0) 1 else -1, startCol)
+                                        }
+                                    } else {
+                                        handleCellTap(startRow, startCol)
+                                    }
+                                }
                             }
                         }
-                        Box(
-                            modifier = Modifier.weight(1f).aspectRatio(1f)
-                                .background(tileColor, RoundedCornerShape(5.dp))
-                                .border(1.dp, if (cell.state == CellState.HIDDEN) BorderDark else Color.White.copy(alpha = 0.12f), RoundedCornerShape(5.dp))
-                                .clickable {
-                                    val result = if (mode == InteractionMode.DRILL_REVEAL) {
-                                        GridEngine.reveal(grid, rowIndex, colIndex)
-                                    } else {
-                                        GridEngine.capture(grid, rowIndex, colIndex)
-                                    }
-                                    grid = result.grid
-                                    status = result.message
-                                    if (result.turnConsumed) {
-                                        var nextCombat = combat
-                                        if (result.detonatedMines > 0) {
-                                            nextCombat = CombatEngine.registerMineDetonation(nextCombat).state
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                            .background(SurfaceDark, RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp))
+                            .padding(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        grid.forEach { row ->
+                            Row(
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                row.forEach { cell ->
+                                    val tileColor = when {
+                                        cell.state == CellState.HIDDEN -> Color(0xFF252D38)
+                                        cell.hasMine -> Color(0xFF6E2630)
+                                        else -> when (cell.ammoColor) {
+                                            AmmoColor.RED -> Color(0xFFE5534B)
+                                            AmmoColor.BLUE -> Color(0xFF388BFD)
+                                            AmmoColor.YELLOW -> Color(0xFFD29922)
+                                            AmmoColor.GREEN_HEAL -> Color(0xFF3FB950)
+                                            AmmoColor.NONE -> Color(0xFF30363D)
                                         }
-                                        if (result.capturedMines > 0) {
-                                            nextCombat = nextCombat.copy(chips = nextCombat.chips + result.capturedMines * 25)
-                                            repeat(result.capturedMines) {
-                                                nextCombat = CombatEngine.launchCapturedMine(nextCombat).state
+                                    }
+                                    Box(
+                                        modifier = Modifier.weight(1f).fillMaxSize()
+                                            .background(
+                                                Brush.radialGradient(
+                                                    colors = listOf(
+                                                        tileColor.copy(alpha = 0.98f),
+                                                        tileColor.copy(alpha = 0.52f)
+                                                    )
+                                                ),
+                                                RoundedCornerShape(5.dp)
+                                            )
+                                            .border(
+                                                1.dp,
+                                                if (cell.state == CellState.HIDDEN) Color(0xFF1C718A)
+                                                else tileColor.copy(alpha = 0.92f),
+                                                RoundedCornerShape(5.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        NeonTileGlyph(cell = cell, modifier = Modifier.fillMaxSize().padding(3.dp))
+                                        if (cell.state == CellState.REVEALED && !cell.hasMine && cell.adjacentMines > 0) {
+                                            Box(
+                                                modifier = Modifier.align(Alignment.TopEnd)
+                                                    .padding(3.dp)
+                                                    .background(Color(0xDD07111C), RoundedCornerShape(4.dp))
+                                                    .border(1.dp, BorderDark, RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 3.dp, vertical = 0.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = cell.adjacentMines.toString(),
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Black,
+                                                    fontSize = 8.sp
+                                                )
                                             }
                                         }
-
-                                        val matchResolution = GridEngine.resolveMatches(result.grid)
-                                        grid = matchResolution.grid
-                                        val attackResult = CombatEngine.resolveMatches(nextCombat, matchResolution.groups)
-                                        nextCombat = CombatEngine.advanceTurn(attackResult.state).state
-                                        combat = nextCombat
-
-                                        if (matchResolution.groups.isNotEmpty()) {
-                                            val matchedCells = matchResolution.groups.sumOf { it.size }
-                                            status += " Серии: ${matchResolution.groups.size}, срабатываний клеток: $matchedCells."
-                                        }
-                                        if (attackResult.events.any { it.type == CombatEventType.ENEMY_DESTROYED }) {
-                                            status += " Враг уничтожен."
-                                        }
-                                        if (attackResult.events.any { it.type == CombatEventType.ENEMY_SLOWED }) {
-                                            status += " Враг замедлен."
-                                        }
-                                        if (result.detonatedMines > 0) {
-                                            status += " Щит повреждён, турели перегружены."
-                                        }
-                                        if (combat.isGameOver) status += " База разрушена."
                                     }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = when {
-                                    cell.state == CellState.HIDDEN -> "⬡"
-                                    cell.hasMine -> "✹"
-                                    cell.adjacentMines > 0 -> cell.adjacentMines.toString()
-                                    cell.ammoColor == AmmoColor.GREEN_HEAL -> "+"
-                                    else -> when (cell.ammoColor) {
-                                        AmmoColor.RED -> "R"
-                                        AmmoColor.BLUE -> "B"
-                                        AmmoColor.YELLOW -> "Y"
-                                        else -> "·"
-                                    }
-                                },
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
 
-        Text(status, color = Color(0xFFB1BAC4), fontSize = 11.sp, maxLines = 2)
+            Text(status, color = Color(0xFFB1BAC4), fontSize = if (compact) 9.sp else 11.sp, maxLines = 2)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
-                onClick = { mode = InteractionMode.DRILL_REVEAL },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = if (mode == InteractionMode.DRILL_REVEAL) Neon else SurfaceDark)
-            ) { Text("БУР", color = Color.White, fontWeight = FontWeight.Bold) }
-            Button(
-                onClick = { mode = InteractionMode.FLAG_CAPTURE },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = if (mode == InteractionMode.FLAG_CAPTURE) Color(0xFF238636) else SurfaceDark)
-            ) { Text("ЗАХВАТ", color = Color.White, fontWeight = FontWeight.Bold) }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Booster("СКАНЕР", "SCAN", Modifier.weight(1f)) {
-                val mines = grid.flatten().count { it.hasMine }
-                status = "СКАНЕР: мин на поле — $mines; целей на радаре — ${combat.enemies.size}."
+            // Control rows remain outside the weighted board viewport and stay on screen.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { mode = InteractionMode.DRILL_REVEAL },
+                    modifier = Modifier.weight(1f).height(if (compact) 36.dp else 44.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (mode == InteractionMode.DRILL_REVEAL) Neon else SurfaceDark
+                    )
+                ) { Text("⌖  БУР", color = Color(0xFF06131D), fontWeight = FontWeight.Black) }
+                Button(
+                    onClick = { mode = InteractionMode.FLAG_CAPTURE },
+                    modifier = Modifier.weight(1f).height(if (compact) 36.dp else 44.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (mode == InteractionMode.FLAG_CAPTURE) Color(0xFF238636) else SurfaceDark
+                    )
+                ) { Text("⬡  ЗАХВАТ", color = Color.White, fontWeight = FontWeight.Black) }
             }
-            Booster("АВИАУДАР", "18 DMG", Modifier.weight(1f)) {
-                val result = CombatEngine.launchAirstrike(combat)
-                combat = CombatEngine.advanceTurn(result.state).state
-                val damaged = result.events.count { it.type == CombatEventType.ENEMY_DAMAGED }
-                val destroyed = result.events.count { it.type == CombatEventType.ENEMY_DESTROYED }
-                status = if (damaged == 0) "Авиаудар: целей нет." else "Авиаудар: поражено целей — $damaged, уничтожено — $destroyed."
-            }
-            Booster("РЕМОНТ", "+15 HP", Modifier.weight(1f)) {
-                val result = CombatEngine.repairBase(combat)
-                combat = CombatEngine.advanceTurn(result.state).state
-                val repaired = result.events.filter { it.type == CombatEventType.BASE_REPAIRED }.sumOf { it.amount }
-                status = if (repaired == 0) "Ремонт: щит уже полон." else "Ремонт: восстановлено $repaired HP."
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Booster("СКАНЕР", "SCAN", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
+                    val mines = grid.flatten().count { it.hasMine }
+                    status = "СКАНЕР: мин на поле — " + mines + "; целей на радаре — " + combat.enemies.size + "."
+                }
+                Booster("АВИАУДАР", "18 DMG", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
+                    TacticalSoundSynth.playHeavyExplosion()
+                    val result = CombatEngine.launchAirstrike(combat)
+                    if (result.events.isNotEmpty()) {
+                        visualEvents = result.events
+                        val targetIds = result.events.mapNotNull { it.enemyId }.toSet()
+                        visualTargets = combat.enemies.filter { it.id in targetIds }
+                        visualEffectKey += 1
+                    }
+                    combat = CombatEngine.advanceTurn(result.state).state
+                    val damaged = result.events.count { it.type == CombatEventType.ENEMY_DAMAGED }
+                    val destroyed = result.events.count { it.type == CombatEventType.ENEMY_DESTROYED }
+                    status = if (damaged == 0) "Авиаудар: целей нет." else "Авиаудар: поражено целей — $damaged, уничтожено — $destroyed."
+                }
+                Booster("РЕМОНТ", "+15 HP", Modifier.weight(1f).height(if (compact) 40.dp else 50.dp), compact = compact) {
+                    TacticalSoundSynth.playTurretFire(AmmoColor.GREEN_HEAL)
+                    val result = CombatEngine.repairBase(combat)
+                    if (result.events.isNotEmpty()) {
+                        visualEvents = result.events
+                        visualTargets = emptyList()
+                        visualEffectKey += 1
+                    }
+                    combat = CombatEngine.advanceTurn(result.state).state
+                    val repaired = result.events.filter { it.type == CombatEventType.BASE_REPAIRED }.sumOf { it.amount }
+                    status = if (repaired == 0) "Ремонт: щит уже полон." else "Ремонт: восстановлено $repaired HP."
+                }
             }
         }
     }
@@ -241,7 +495,7 @@ private fun PerimeterGame() {
                     grid = GridEngine.newGrid()
                     combat = CombatEngine.newGame()
                     mode = InteractionMode.DRILL_REVEAL
-                    status = "Периметр стабилен. Выберите плитку."
+                    status = "ПЕРВЫЙ ХОД: свайпни вертикально между двумя центральными цветными клетками."
                 }) {
                     Text("ПОВТОРИТЬ")
                 }
@@ -251,68 +505,51 @@ private fun PerimeterGame() {
 }
 
 @Composable
-private fun RadarPanel(baseHp: Int, stun: Int, turns: Int, enemies: List<EnemyUnit>) {
+private fun RadarPanel(
+    baseHp: Int,
+    stun: Int,
+    turns: Int,
+    enemies: List<EnemyUnit>,
+    effectEvents: List<CombatEvent>,
+    effectTargets: List<EnemyUnit>,
+    effectKey: Int,
+    compact: Boolean,
+    shakeOffsetX: Float,
+    shakeOffsetY: Float
+) {
     Column(
-        modifier = Modifier.fillMaxWidth().background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, BorderDark, RoundedCornerShape(10.dp)).padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp)
+        modifier = Modifier.fillMaxWidth().graphicsLayer {
+            translationX = shakeOffsetX
+            translationY = shakeOffsetY
+        }.background(SurfaceDark, RoundedCornerShape(10.dp)).border(1.dp, Color(0xFF17647A), RoundedCornerShape(10.dp)).padding(if (compact) 7.dp else 10.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 7.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("ТАКТИЧЕСКИЙ РАДАР", color = Neon, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("◉  TACTICAL SENSOR ARRAY", color = Neon, fontSize = 11.sp, fontWeight = FontWeight.Black)
             Text("ХОД $turns", color = Color.LightGray, fontSize = 10.sp)
         }
-        Box(
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).fillMaxWidth().height(70.dp)
-                .background(Color(0xFF0B171D), RoundedCornerShape(6.dp))
-                .border(1.dp, Color(0xFF1F6B55), RoundedCornerShape(6.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                for (progress in (CombatEngine.PATH_LENGTH - 1) downTo 0) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        (0 until GridEngine.GRID_SIZE).forEach { lane ->
-                            val here = enemies.filter { it.lane == lane && it.progress == progress }
-                            val cellColor = when {
-                                here.isEmpty() -> Color(0xFF10262B)
-                                here.any { it.type == EnemyType.BOSS } -> Color(0xFFD29922)
-                                else -> Color(0xFF8B2635)
-                            }
-                            Box(
-                                modifier = Modifier.weight(1f).height(8.dp)
-                                    .background(cellColor, RoundedCornerShape(2.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (here.isNotEmpty()) {
-                                    Text(
-                                        if (here.size > 1) here.size.toString() else "◆",
-                                        color = Color.White,
-                                        fontSize = 7.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        TacticalBattlefield(
+            enemies = enemies,
+            baseHp = baseHp,
+            turretStunTurns = stun,
+            turn = turns,
+            effectEvents = effectEvents,
+            effectTargets = effectTargets,
+            effectKey = effectKey,
+            modifier = Modifier.fillMaxWidth().height(if (compact) 58.dp else 122.dp)
+        )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("ЩИТ ПЕРИМЕТРА", color = Color.LightGray, fontSize = 10.sp)
+            Text("BASE SHIELD", color = Color(0xFF9CB8C8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Text("$baseHp / 100 HP", color = if (baseHp > 30) Color(0xFF3FB950) else Color(0xFFF85149), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
         Box(modifier = Modifier.fillMaxWidth().fillMaxWidth().height(6.dp).background(BorderDark, RoundedCornerShape(4.dp))) {
             Box(modifier = Modifier.fillMaxWidth(baseHp / 100f).size(height = 6.dp, width = 1.dp).background(Color(0xFF3FB950), RoundedCornerShape(4.dp)))
         }
-        Text("ВРАГОВ: ${enemies.size}", color = Color.LightGray, fontSize = 9.sp)
+        Text("HOSTILES DETECTED  /  ${enemies.size}", color = if (enemies.isEmpty()) Color(0xFF5CFFB0) else Color(0xFFFF667A), fontSize = 9.sp, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
-            Text("🔴 МОРТИРА", color = Color(0xFFE5534B), fontSize = 9.sp)
-            Text("🔵 КРИО", color = Color(0xFF58A6FF), fontSize = 9.sp)
-            Text("🟡 ТЕСЛА", color = Color(0xFFD29922), fontSize = 9.sp)
+            Text("◆  MORTAR", color = Color(0xFFFF667A), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("◆  CRYO", color = Color(0xFF45D9FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("◆  TESLA", color = Color(0xFFFFC857), fontSize = 9.sp, fontWeight = FontWeight.Bold)
         }
         if (stun > 0) Text("⚠ ПЕРЕГРУЗКА: $stun хода", color = Color(0xFFF85149), fontSize = 10.sp)
     }
@@ -323,14 +560,15 @@ private fun Booster(
     title: String,
     badge: String,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     onClick: () -> Unit
 ) {
     Column(
-        modifier = modifier.background(SurfaceDark, RoundedCornerShape(8.dp)).border(1.dp, BorderDark, RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        modifier = modifier.background(Brush.verticalGradient(listOf(Color(0xFF172A3A), Color(0xFF0B131F))), RoundedCornerShape(8.dp)).border(1.dp, Color(0xFF1B667C), RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = if (compact) 4.dp else 10.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(if (compact) 1.dp else 4.dp)
     ) {
-        Text(title, color = Color.LightGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-        Text(badge, color = Neon, fontSize = 11.sp, fontWeight = FontWeight.Black)
+        Text(title, color = Color(0xFFB8D4E4), fontSize = if (compact) 8.sp else 9.sp, fontWeight = FontWeight.Black)
+        Text(badge, color = Neon, fontSize = if (compact) 10.sp else 11.sp, fontWeight = FontWeight.Black)
     }
 }

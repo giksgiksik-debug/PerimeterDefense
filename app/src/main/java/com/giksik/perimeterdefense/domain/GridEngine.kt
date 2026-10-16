@@ -4,7 +4,7 @@ import kotlin.random.Random
 
 object GridEngine {
     const val GRID_SIZE = 6
-    const val MAX_MINES = 7
+    const val MAX_MINES = 5
     private const val MINE_CHANCE = 0.16
 
     private val directions = listOf(
@@ -26,7 +26,12 @@ object GridEngine {
                         row = row,
                         col = col,
                         state = CellState.REVEALED,
-                        ammoColor = randomAmmo(random)
+                        // A fixed 2×3 opening pattern guarantees a legal first Match-3 swipe.
+                        ammoColor = when {
+                            (row == 2 && col in 2..4) -> if (col == 3) AmmoColor.BLUE else AmmoColor.RED
+                            (row == 3 && col in 2..4) -> if (col == 3) AmmoColor.RED else AmmoColor.BLUE
+                            else -> randomAmmo(random)
+                        }
                     )
                 } else {
                     GridCell(row = row, col = col, hasMine = mine)
@@ -34,6 +39,32 @@ object GridEngine {
             }
         }
         return recalculateAdjacentMines(grid)
+    }
+
+    /**
+     * Repairs legacy wave-one saves from before the guaranteed opening pattern.
+     * Only the six always-safe, already revealed cells can be adjusted.
+     */
+    fun ensureOpeningMatch(grid: List<List<GridCell>>): List<List<GridCell>> {
+        if (grid.size != GRID_SIZE || grid.any { it.size != GRID_SIZE }) return grid
+        val safeCells = (2..3).flatMap { row -> (2..4).map { col -> row to col } }
+        if (safeCells.any { (row, col) ->
+                grid[row][col].state != CellState.REVEALED || grid[row][col].hasMine
+            }
+        ) return grid
+
+        return grid.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                if (row in 2..3 && col in 2..4) {
+                    cell.copy(
+                        ammoColor = when {
+                            (row == 2 && col == 3) || (row == 3 && col != 3) -> AmmoColor.BLUE
+                            else -> AmmoColor.RED
+                        }
+                    )
+                } else cell
+            }
+        }
     }
 
     fun recalculateAdjacentMines(grid: List<List<GridCell>>): List<List<GridCell>> =
@@ -110,6 +141,56 @@ object GridEngine {
             turnConsumed = true,
             message = "Мина перехвачена и отправлена во врагов!"
         )
+    }
+
+
+    /**
+     * Swaps two adjacent revealed ammunition cells only when the move creates
+     * a match touching at least one of the swapped cells. Hidden cells and mines
+     * keep their Minesweeper meaning and cannot be moved.
+     */
+    fun swapAdjacent(
+        grid: List<List<GridCell>>,
+        row1: Int,
+        col1: Int,
+        row2: Int,
+        col2: Int
+    ): GridSwapResult {
+        val first = grid.getOrNull(row1)?.getOrNull(col1)
+            ?: return GridSwapResult(grid, false, "СВАЙП: клетка вне поля")
+        val second = grid.getOrNull(row2)?.getOrNull(col2)
+            ?: return GridSwapResult(grid, false, "СВАЙП: клетка вне поля")
+
+        if (kotlin.math.abs(row1 - row2) + kotlin.math.abs(col1 - col2) != 1) {
+            return GridSwapResult(grid, false, "Двигай боеприпасы на соседнюю клетку")
+        }
+        if (
+            first.state != CellState.REVEALED || second.state != CellState.REVEALED ||
+            first.hasMine || second.hasMine ||
+            first.ammoColor == AmmoColor.NONE || second.ammoColor == AmmoColor.NONE
+        ) {
+            return GridSwapResult(grid, false, "Открывай клетки буром, чтобы двигать боеприпасы")
+        }
+        if (first.ammoColor == second.ammoColor) {
+            return GridSwapResult(grid, false, "Выбери боеприпасы разных цветов")
+        }
+
+        val swapped = grid.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                when (row to col) {
+                    row1 to col1 -> cell.copy(ammoColor = second.ammoColor)
+                    row2 to col2 -> cell.copy(ammoColor = first.ammoColor)
+                    else -> cell
+                }
+            }
+        }
+        val touchedCells = setOf(row1 to col1, row2 to col2)
+        val groups = findMatchGroups(swapped)
+        if (groups.none { group -> group.cells.any { it in touchedCells } }) {
+            return GridSwapResult(grid, false, "СЕРИИ НЕТ — попробуй другой свайп")
+        }
+
+        return GridSwapResult(swapped, true, "СЕРИЯ СОБРАНА — турели атакуют!")
     }
 
     /**
