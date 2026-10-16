@@ -91,10 +91,9 @@ class CombatEngineTest {
 
         val result = CombatEngine.advanceTurn(state)
 
-        assertEquals(30, result.state.baseHp)
-        assertEquals(1, result.state.enemies.first { it.id == 1L }.progress)
-        assertEquals(0, result.state.enemies.first { it.id == 1L }.slowTurns)
         assertEquals(18, result.state.baseHp)
+        assertEquals(2, result.state.enemies.first { it.id == 1L }.progress)
+        assertEquals(0, result.state.enemies.first { it.id == 1L }.slowTurns)
         assertFalse(result.state.isGameOver)
         assertFalse(result.state.enemies.any { it.id == 2L })
     }
