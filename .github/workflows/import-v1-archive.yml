@@ -31,11 +31,6 @@ jobs:
           cp -a "$RUNNER_TEMP/perimeter-import/." .
           rm perimeter-defense-v1.0-complete.zip
 
-      - name: Enable CI on this branch
-        shell: bash
-        run: |
-          sed -i 's/feature\/neon-sci-fi-visuals]/feature\/neon-sci-fi-visuals, feature\/v1.0.0-complete]/' .github/workflows/android-ci.yml
-
       - name: Commit imported source
         shell: bash
         run: |
