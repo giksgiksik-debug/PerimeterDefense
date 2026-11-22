@@ -1,5 +1,5 @@
 name: Import v1.0.0 archive
-# Archive import is triggered by updates to this workflow or manually.
+# Import application source while preserving repository-managed GitHub Actions workflows.
 
 on:
   push:
@@ -25,15 +25,20 @@ jobs:
       - name: Extract project archive
         shell: bash
         run: |
+          set -euo pipefail
           test -f perimeter-defense-v1.0-complete.zip
           mkdir -p "$RUNNER_TEMP/perimeter-import"
           unzip -oq perimeter-defense-v1.0-complete.zip -d "$RUNNER_TEMP/perimeter-import"
+          # Never overwrite workflow files: GitHub App tokens cannot update workflows
+          # without the separate workflows permission.
+          rm -rf "$RUNNER_TEMP/perimeter-import/.github/workflows"
           cp -a "$RUNNER_TEMP/perimeter-import/." .
           rm perimeter-defense-v1.0-complete.zip
 
       - name: Commit imported source
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
