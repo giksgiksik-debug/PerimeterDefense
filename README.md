@@ -1,36 +1,28 @@
-# Perimeter Defense: Mine & Match
+# Perimeter Defense: Mine & Match (v1.0.0)
 
-Android tactical puzzle prototype combining Minesweeper, Match-3, and tower defense.
+Android tactical puzzle game combining Minesweeper, Match-3, and tower defense.
 
-## Tech stack
+## Gameplay & Features
 
-- Kotlin
-- Jetpack Compose / Material 3
-- Min SDK 26, Target SDK 35
-- JDK 17, Android Gradle Plugin 8.7.3, Gradle 8.9
-- GitHub Actions for CI and debug APK artifacts
+- **6×6 Tactical Energy Matrix**: guaranteed playable opening Match-3 swipe, uniform mine placement, adjacent-mine counters, and long-press tactical mine flagging (`FLAGGED`).
+- **Dual Modes & Direct Swipes**: drill hidden tiles, capture mines (+25 CR and launch them at the closest enemy), or swipe adjacent revealed ammo tiles directly to trigger Match-3 combos and cascades.
+- **Tactical Battlefield Radar**: animated vector battlefield with enemy waves (Scouts, Raiders, Armored, Bosses), turret beams, impact sparks, and shield telemetry.
+- **Hangar Upgrades & Economy**: spend earned credits (`CR`) on permanent run upgrades (Mortar, Cryo, Tesla, Base Shield) or tactical boosters (Free Scanner, Airstrike `40 CR`, Emergency Repair `30 CR`).
+- **Pause & Tactical Guide**: built-in pause dialog with weapon legend, sound toggle, Hangar shortcut, and instant restart.
+- **Architecture & Persistence**: pure Kotlin domain engine (`GridEngine`, `CombatEngine`), `PerimeterGameViewModel` (`StateFlow`), versioned DataStore persistence (game state, upgrades, best wave, audio setting), and bounded procedural PCM audio (`TacticalSoundSynth`).
 
-## Current milestone: Core Grid
+## Tech Stack
 
-- 6×6 grid with a safe revealed center
-- Hidden mines and adjacent-mine counts
-- Drill and capture interaction modes
-- Basic match detection for horizontal and vertical runs
-- Single-screen tactical UI prototype
+- Kotlin 2.0.21, Jetpack Compose / Material 3, Lifecycle ViewModel
+- Jetpack DataStore Preferences
+- Min SDK 26, Target SDK 35, JDK 17, AGP 8.7.3, Gradle 8.9
+- GitHub Actions CI (`testDebugUnitTest`, `lintDebug`, `assembleDebug`)
 
-## Build
+## Build & Release
 
-The GitHub Actions workflow runs unit tests and builds a debug APK on pushes to `main` or `milestone-1-core-grid`, pull requests to `main`, and manual dispatches.
-
-Open **Actions → Android CI** to download the `perimeter-defense-debug` artifact after a successful run.
+- **Debug test & build**: `gradle testDebugUnitTest lintDebug assembleDebug`
+- **Signed Release AAB**: export `KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD`, then run `gradle bundleRelease`.
 
 ## Package
 
-`com.giksik.perimeterdefense`
-
-## Roadmap
-
-1. Core grid and Match-3 resolution
-2. Radar, enemies, and combat
-3. Hangar, progression, and DataStore persistence
-4. AdMob/UMP, Play Billing, privacy policy, release AAB
+`com.giksgik.perimeterdefense`

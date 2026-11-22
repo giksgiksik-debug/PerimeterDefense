@@ -1,0 +1,257 @@
+package com.giksgik.perimeterdefense.domain
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.random.Random
+
+class GridEngineTest {
+    @Test
+    fun newGridHasSixBySixCellsAndSafeCenter() {
+        val grid = GridEngine.newGrid(Random(1))
+        assertEquals(6, grid.size)
+        assertTrue(grid.all { it.size == 6 })
+        for (row in 2..3) {
+            for (col in 2..4) {
+                assertEquals(CellState.REVEALED, grid[row][col].state)
+                assertFalse(grid[row][col].hasMine)
+            }
+        }
+    }
+
+    @Test
+    fun newGridAlwaysPlacesMaxMinesOutsideSafeArea() {
+        val grid = GridEngine.newGrid(Random(99))
+        val mines = grid.flatten().filter { it.hasMine }
+        assertEquals(GridEngine.MAX_MINES, mines.size)
+        assertTrue(mines.none { it.row in 2..3 && it.col in 2..4 })
+    }
+
+    @Test
+    fun adjacentMineCountIncludesEightNeighbors() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                GridCell(row, col, hasMine = (row == 1 && col == 1) || (row == 1 && col == 2))
+            }
+        }
+        val counted = GridEngine.recalculateAdjacentMines(grid)
+        assertEquals(2, counted[2][2].adjacentMines)
+        assertEquals(1, counted[0][0].adjacentMines)
+    }
+
+    @Test
+    fun revealMineMarksCellAsRevealedAndClearsMine() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                GridCell(row, col, hasMine = row == 0 && col == 0)
+            }
+        }
+        val result = GridEngine.reveal(grid, 0, 0, Random(7))
+        assertEquals(1, result.detonatedMines)
+        assertTrue(result.turnConsumed)
+        assertEquals(CellState.REVEALED, result.grid[0][0].state)
+        assertFalse(result.grid[0][0].hasMine)
+    }
+
+    @Test
+    fun toggleFlagMarksHiddenCellAndBlocksAccidentalReveal() {
+        val grid = List(6) { row -> List(6) { col -> GridCell(row, col) } }
+        val flagged = GridEngine.toggleFlag(grid, 0, 0)
+        assertFalse(flagged.turnConsumed)
+        assertEquals(CellState.FLAGGED, flagged.grid[0][0].state)
+
+        val blockedReveal = GridEngine.reveal(flagged.grid, 0, 0)
+        assertFalse(blockedReveal.turnConsumed)
+        assertEquals(CellState.FLAGGED, blockedReveal.grid[0][0].state)
+
+        val unflagged = GridEngine.toggleFlag(flagged.grid, 0, 0)
+        assertEquals(CellState.HIDDEN, unflagged.grid[0][0].state)
+    }
+
+    @Test
+    fun matchesFindHorizontalThree() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                if (row == 0 && col in 1..3) {
+                    GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                } else GridCell(row, col)
+            }
+        }
+        assertEquals(setOf(0 to 1, 0 to 2, 0 to 3), GridEngine.findMatches(grid))
+    }
+
+    @Test
+    fun matchGroupsKeepSeparateRunsOfTheSameColorSeparate() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                val inFirstRun = row == 0 && col in 0..2
+                val inSecondRun = row == 5 && col in 3..5
+                if (inFirstRun || inSecondRun) {
+                    GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.BLUE)
+                } else {
+                    GridCell(row, col)
+                }
+            }
+        }
+
+        val groups = GridEngine.findMatchGroups(grid)
+        assertEquals(2, groups.size)
+        assertTrue(groups.all { it.ammoColor == AmmoColor.BLUE && it.size == 3 })
+        assertTrue(groups.all { it.multiplier == 1.0 })
+    }
+
+    @Test
+    fun crossingRunsOfTheSameColorBecomeOneFiveCellGroup() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                val inHorizontal = row == 2 && col in 1..3
+                val inVertical = col == 2 && row in 1..3
+                if (inHorizontal || inVertical) {
+                    GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                } else {
+                    GridCell(row, col)
+                }
+            }
+        }
+
+        val groups = GridEngine.findMatchGroups(grid)
+        assertEquals(1, groups.size)
+        assertEquals(5, groups.single().size)
+        assertEquals(2.5, groups.single().multiplier, 0.0)
+        assertEquals(5, GridEngine.findMatches(grid).size)
+    }
+
+    @Test
+    fun fourCellRunGetsOnePointFiveMultiplier() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                if (row == 4 && col in 1..4) {
+                    GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.YELLOW)
+                } else {
+                    GridCell(row, col)
+                }
+            }
+        }
+
+        val group = GridEngine.findMatchGroups(grid).single()
+        assertEquals(4, group.size)
+        assertEquals(1.5, group.multiplier, 0.0)
+    }
+
+    @Test
+    fun hiddenCellsAndMinesDoNotParticipateInMatches() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                when {
+                    row == 0 && col == 0 -> GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.GREEN_HEAL)
+                    row == 0 && col == 1 -> GridCell(row, col, state = CellState.HIDDEN, ammoColor = AmmoColor.GREEN_HEAL)
+                    row == 0 && col == 2 -> GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.GREEN_HEAL)
+                    row == 1 && col in 0..2 -> GridCell(row, col, state = CellState.REVEALED, hasMine = col == 1, ammoColor = AmmoColor.BLUE)
+                    else -> GridCell(row, col)
+                }
+            }
+        }
+
+        assertTrue(GridEngine.findMatchGroups(grid).isEmpty())
+    }
+
+    @Test
+    fun resolveMatchesReRollsCellsAndLeavesNoAutomaticRepeat() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                if (row == 0 && col in 0..2) {
+                    GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                } else {
+                    GridCell(row, col)
+                }
+            }
+        }
+
+        val result = GridEngine.resolveMatches(grid, Random(42))
+
+        assertTrue(result.groups.isNotEmpty())
+        assertTrue(result.groups.any { it.size >= 3 })
+        assertTrue(result.cascadesResolved >= 1)
+        assertTrue(GridEngine.findMatchGroups(result.grid).isEmpty())
+    }
+
+    @Test
+    fun adjacentSwapThatCreatesMatchIsAccepted() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                when {
+                    row == 0 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    row == 1 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.BLUE)
+                    row == 1 && col == 1 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    row == 2 && col == 0 ->
+                        GridCell(row, col, state = CellState.REVEALED, ammoColor = AmmoColor.RED)
+                    else -> GridCell(row, col)
+                }
+            }
+        }
+
+        val result = GridEngine.swapAdjacent(grid, 1, 1, 1, 0)
+
+        assertTrue(result.accepted)
+        assertEquals(AmmoColor.RED, result.grid[1][0].ammoColor)
+        assertEquals(AmmoColor.BLUE, result.grid[1][1].ammoColor)
+        assertTrue(GridEngine.findMatchGroups(result.grid).any { it.cells.containsAll(setOf(0 to 0, 1 to 0, 2 to 0)) })
+    }
+
+    @Test
+    fun adjacentSwapWithoutMatchIsRejectedAndGridStaysUnchanged() {
+        val grid = List(6) { row ->
+            List(6) { col ->
+                if (row == 0 && col in 0..1) {
+                    GridCell(
+                        row, col, state = CellState.REVEALED,
+                        ammoColor = if (col == 0) AmmoColor.RED else AmmoColor.BLUE
+                    )
+                } else GridCell(row, col)
+            }
+        }
+
+        val result = GridEngine.swapAdjacent(grid, 0, 0, 0, 1)
+
+        assertFalse(result.accepted)
+        assertEquals(grid, result.grid)
+    }
+
+    @Test
+    fun newGameAlwaysStartsWithAValidMatchThreeSwipe() {
+        val grid = GridEngine.newGrid(Random(123))
+        val result = GridEngine.swapAdjacent(grid, 2, 3, 3, 3)
+
+        assertTrue(result.accepted)
+        assertEquals(AmmoColor.RED, result.grid[2][3].ammoColor)
+        assertEquals(AmmoColor.BLUE, result.grid[3][3].ammoColor)
+        assertTrue(
+            GridEngine.findMatchGroups(result.grid).any { it.ammoColor == AmmoColor.RED && it.size >= 3 }
+        )
+        assertTrue(
+            GridEngine.findMatchGroups(result.grid).any { it.ammoColor == AmmoColor.BLUE && it.size >= 3 }
+        )
+    }
+
+    @Test
+    fun legacyFirstWaveGridGetsAPlayableOpeningMatch() {
+        val initial = GridEngine.newGrid(Random(321))
+        val legacy = initial.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                if (row in 2..3 && col in 2..4) {
+                    cell.copy(ammoColor = AmmoColor.YELLOW)
+                } else cell
+            }
+        }
+
+        val migrated = GridEngine.ensureOpeningMatch(legacy)
+        val swap = GridEngine.swapAdjacent(migrated, 2, 3, 3, 3)
+
+        assertTrue(swap.accepted)
+        assertTrue(GridEngine.findMatchGroups(swap.grid).any { it.size >= 3 })
+    }
+}

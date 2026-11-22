@@ -1,0 +1,362 @@
+package com.giksgik.perimeterdefense.domain
+
+import kotlin.random.Random
+
+object GridEngine {
+    const val GRID_SIZE = 6
+    const val MAX_MINES = 5
+
+    private val directions = listOf(
+        -1 to -1, -1 to 0, -1 to 1,
+        0 to -1,           0 to 1,
+        1 to -1,  1 to 0,  1 to 1
+    )
+
+    fun newGrid(random: Random = Random.Default): List<List<GridCell>> {
+        val safe = (2..3).flatMap { row -> (2..4).map { col -> row to col } }.toSet()
+        // Distribute mines uniformly across all non-safe coordinates.
+        val mineCoords = (0 until GRID_SIZE)
+            .flatMap { row -> (0 until GRID_SIZE).map { col -> row to col } }
+            .filter { it !in safe }
+            .shuffled(random)
+            .take(MAX_MINES)
+            .toSet()
+
+        val grid = List(GRID_SIZE) { row ->
+            List(GRID_SIZE) { col ->
+                val coord = row to col
+                if (coord in safe) {
+                    GridCell(
+                        row = row,
+                        col = col,
+                        state = CellState.REVEALED,
+                        // A fixed 2×3 opening pattern guarantees a legal first Match-3 swipe.
+                        ammoColor = when {
+                            (row == 2 && col in 2..4) -> if (col == 3) AmmoColor.BLUE else AmmoColor.RED
+                            (row == 3 && col in 2..4) -> if (col == 3) AmmoColor.RED else AmmoColor.BLUE
+                            else -> randomAmmo(random)
+                        }
+                    )
+                } else {
+                    GridCell(row = row, col = col, hasMine = coord in mineCoords)
+                }
+            }
+        }
+        return recalculateAdjacentMines(grid)
+    }
+
+    /**
+     * Repairs legacy wave-one saves from before the guaranteed opening pattern.
+     * Only the six always-safe, already revealed cells can be adjusted.
+     */
+    fun ensureOpeningMatch(grid: List<List<GridCell>>): List<List<GridCell>> {
+        if (grid.size != GRID_SIZE || grid.any { it.size != GRID_SIZE }) return grid
+        val safeCells = (2..3).flatMap { row -> (2..4).map { col -> row to col } }
+        if (safeCells.any { (row, col) ->
+                grid[row][col].state != CellState.REVEALED || grid[row][col].hasMine
+            }
+        ) return grid
+
+        return grid.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                if (row in 2..3 && col in 2..4) {
+                    cell.copy(
+                        ammoColor = when {
+                            (row == 2 && col == 3) || (row == 3 && col != 3) -> AmmoColor.BLUE
+                            else -> AmmoColor.RED
+                        }
+                    )
+                } else cell
+            }
+        }
+    }
+
+    fun recalculateAdjacentMines(grid: List<List<GridCell>>): List<List<GridCell>> =
+        grid.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                val count = directions.count { (dr, dc) ->
+                    val nr = row + dr
+                    val nc = col + dc
+                    nr in 0 until GRID_SIZE && nc in 0 until GRID_SIZE && grid[nr][nc].hasMine
+                }
+                cell.copy(adjacentMines = count)
+            }
+        }
+
+    /** Toggles a tactical mine marker on a hidden cell without consuming a turn. */
+    fun toggleFlag(grid: List<List<GridCell>>, row: Int, col: Int): GridResult {
+        val cell = grid.getOrNull(row)?.getOrNull(col)
+            ?: return GridResult(grid, message = "Клетка вне поля")
+        if (cell.state == CellState.REVEALED) {
+            return GridResult(grid, message = "Нельзя пометить открытую клетку")
+        }
+        val nextState = if (cell.state == CellState.FLAGGED) CellState.HIDDEN else CellState.FLAGGED
+        val updated = grid.mapIndexed { r, cells ->
+            cells.mapIndexed { c, current ->
+                if (r == row && c == col) current.copy(state = nextState) else current
+            }
+        }
+        val msg = if (nextState == CellState.FLAGGED) "Флаг установлен" else "Флаг снят"
+        return GridResult(grid = updated, turnConsumed = false, message = msg)
+    }
+
+    fun reveal(grid: List<List<GridCell>>, row: Int, col: Int, random: Random = Random.Default): GridResult {
+        val cell = grid.getOrNull(row)?.getOrNull(col)
+            ?: return GridResult(grid, message = "Клетка вне поля")
+        if (cell.state == CellState.REVEALED) return GridResult(grid, message = "Клетка уже открыта")
+        if (cell.state == CellState.FLAGGED) {
+            return GridResult(grid, message = "Клетка помечена флагом — удерживайте, чтобы снять")
+        }
+
+        if (cell.hasMine) {
+            val replaced = grid.mapIndexed { r, cells ->
+                cells.mapIndexed { c, current ->
+                    if (r == row && c == col) {
+                        current.copy(
+                            hasMine = false,
+                            state = CellState.REVEALED,
+                            ammoColor = randomAmmo(random)
+                        )
+                    } else current
+                }
+            }
+            return GridResult(
+                grid = recalculateAdjacentMines(replaced),
+                detonatedMines = 1,
+                turnConsumed = true,
+                message = "Перегрузка! Турели оглушены"
+            )
+        }
+
+        val opened = grid.mapIndexed { r, cells ->
+            cells.mapIndexed { c, current ->
+                if (r == row && c == col) current.copy(state = CellState.REVEALED, ammoColor = randomAmmo(random)) else current
+            }
+        }
+        return GridResult(
+            grid = recalculateAdjacentMines(opened),
+            revealedCells = 1,
+            turnConsumed = true,
+            message = "Клетка вскрыта"
+        )
+    }
+
+    fun capture(grid: List<List<GridCell>>, row: Int, col: Int, random: Random = Random.Default): GridResult {
+        val cell = grid.getOrNull(row)?.getOrNull(col)
+            ?: return GridResult(grid, message = "Клетка вне поля")
+        if (cell.state == CellState.REVEALED) return GridResult(grid, message = "Выбери закрытую клетку")
+
+        if (!cell.hasMine) {
+            val opened = grid.mapIndexed { r, cells ->
+                cells.mapIndexed { c, current ->
+                    if (r == row && c == col) current.copy(state = CellState.REVEALED, ammoColor = randomAmmo(random)) else current
+                }
+            }
+            return GridResult(
+                grid = recalculateAdjacentMines(opened),
+                revealedCells = 1,
+                turnConsumed = true,
+                message = "Промах захвата: клетка вскрыта"
+            )
+        }
+
+        val removed = grid.mapIndexed { r, cells ->
+            cells.mapIndexed { c, current ->
+                if (r == row && c == col) current.copy(hasMine = false, state = CellState.REVEALED, ammoColor = AmmoColor.NONE) else current
+            }
+        }
+        return GridResult(
+            grid = recalculateAdjacentMines(removed),
+            capturedMines = 1,
+            turnConsumed = true,
+            message = "Мина перехвачена и отправлена во врагов!"
+        )
+    }
+
+    /**
+     * Swaps two adjacent revealed ammunition cells only when the move creates
+     * a match touching at least one of the swapped cells. Hidden cells and mines
+     * keep their Minesweeper meaning and cannot be moved.
+     */
+    fun swapAdjacent(
+        grid: List<List<GridCell>>,
+        row1: Int,
+        col1: Int,
+        row2: Int,
+        col2: Int
+    ): GridSwapResult {
+        val first = grid.getOrNull(row1)?.getOrNull(col1)
+            ?: return GridSwapResult(grid, false, "СВАЙП: клетка вне поля")
+        val second = grid.getOrNull(row2)?.getOrNull(col2)
+            ?: return GridSwapResult(grid, false, "СВАЙП: клетка вне поля")
+
+        if (kotlin.math.abs(row1 - row2) + kotlin.math.abs(col1 - col2) != 1) {
+            return GridSwapResult(grid, false, "Двигай боеприпасы на соседнюю клетку")
+        }
+        if (
+            first.state != CellState.REVEALED || second.state != CellState.REVEALED ||
+            first.hasMine || second.hasMine ||
+            first.ammoColor == AmmoColor.NONE || second.ammoColor == AmmoColor.NONE
+        ) {
+            return GridSwapResult(grid, false, "Открывай клетки буром, чтобы двигать боеприпасы")
+        }
+        if (first.ammoColor == second.ammoColor) {
+            return GridSwapResult(grid, false, "Выбери боеприпасы разных цветов")
+        }
+
+        val swapped = grid.mapIndexed { row, cells ->
+            cells.mapIndexed { col, cell ->
+                when (row to col) {
+                    row1 to col1 -> cell.copy(ammoColor = second.ammoColor)
+                    row2 to col2 -> cell.copy(ammoColor = first.ammoColor)
+                    else -> cell
+                }
+            }
+        }
+        val touchedCells = setOf(row1 to col1, row2 to col2)
+        val groups = findMatchGroups(swapped)
+        if (groups.none { group -> group.cells.any { it in touchedCells } }) {
+            return GridSwapResult(grid, false, "СЕРИИ НЕТ — попробуй другой свайп")
+        }
+
+        return GridSwapResult(swapped, true, "СЕРИЯ СОБРАНА — турели атакуют!")
+    }
+
+    /**
+     * Finds contiguous Match-3 runs and merges same-color runs that intersect
+     * (for example, a T or cross). Separate runs of the same color stay separate.
+     */
+    fun findMatchGroups(grid: List<List<GridCell>>): List<MatchGroup> {
+        val groups = mutableListOf<MatchGroup>()
+
+        fun valid(cell: GridCell): Boolean =
+            cell.state == CellState.REVEALED &&
+                !cell.hasMine &&
+                cell.ammoColor != AmmoColor.NONE
+
+        fun addRun(color: AmmoColor, runCells: Set<Pair<Int, Int>>) {
+            val mergedCells = runCells.toMutableSet()
+            var merged: Boolean
+            do {
+                merged = false
+                val iterator = groups.iterator()
+                while (iterator.hasNext()) {
+                    val existing = iterator.next()
+                    if (existing.ammoColor == color && existing.cells.any { it in mergedCells }) {
+                        mergedCells.addAll(existing.cells)
+                        iterator.remove()
+                        merged = true
+                    }
+                }
+            } while (merged)
+            groups.add(MatchGroup(color, mergedCells))
+        }
+
+        // Horizontal runs.
+        for (row in 0 until GRID_SIZE) {
+            var start = 0
+            while (start < GRID_SIZE) {
+                val first = grid[row][start]
+                var end = start + 1
+                while (
+                    end < GRID_SIZE &&
+                    valid(first) &&
+                    valid(grid[row][end]) &&
+                    grid[row][end].ammoColor == first.ammoColor
+                ) {
+                    end++
+                }
+                if (valid(first) && end - start >= 3) {
+                    addRun(first.ammoColor, (start until end).mapTo(linkedSetOf()) { row to it })
+                }
+                start = end
+            }
+        }
+
+        // Vertical runs.
+        for (col in 0 until GRID_SIZE) {
+            var start = 0
+            while (start < GRID_SIZE) {
+                val first = grid[start][col]
+                var end = start + 1
+                while (
+                    end < GRID_SIZE &&
+                    valid(first) &&
+                    valid(grid[end][col]) &&
+                    grid[end][col].ammoColor == first.ammoColor
+                ) {
+                    end++
+                }
+                if (valid(first) && end - start >= 3) {
+                    addRun(first.ammoColor, (start until end).mapTo(linkedSetOf()) { it to col })
+                }
+                start = end
+            }
+        }
+
+        return groups.sortedWith(
+            compareBy<MatchGroup> { group -> group.cells.minOf { it.first } }
+                .thenBy { group -> group.cells.minOf { it.second } }
+        )
+    }
+
+    /** Backward-compatible flat set used by existing callers. */
+    fun findMatches(grid: List<List<GridCell>>): Set<Pair<Int, Int>> =
+        findMatchGroups(grid).flatMapTo(mutableSetOf()) { it.cells }
+
+    /**
+     * Resolves all current matches in batches. Cells are re-rolled only after the
+     * complete batch is identified, so coordinates from one batch never go stale
+     * while another group is being processed.
+     */
+    fun resolveMatches(
+        grid: List<List<GridCell>>,
+        random: Random = Random.Default
+    ): GridMatchResolution {
+        var currentGrid = grid
+        val allGroups = mutableListOf<MatchGroup>()
+        var cascades = 0
+        val maxCascades = 12
+
+        while (cascades < maxCascades) {
+            val groups = findMatchGroups(currentGrid)
+            if (groups.isEmpty()) break
+
+            allGroups.addAll(groups)
+            cascades++
+            val matchedCells = groups.flatMapTo(mutableSetOf()) { it.cells }
+
+            currentGrid = currentGrid.mapIndexed { row, cells ->
+                cells.mapIndexed { col, cell ->
+                    if ((row to col) in matchedCells) {
+                        cell.copy(ammoColor = randomAmmo(random))
+                    } else {
+                        cell
+                    }
+                }
+            }
+        }
+
+        val leftovers = findMatchGroups(currentGrid)
+        if (leftovers.isNotEmpty()) {
+            val leftoverCells = leftovers.flatMapTo(mutableSetOf()) { it.cells }
+            currentGrid = currentGrid.mapIndexed { row, cells ->
+                cells.mapIndexed { col, cell ->
+                    if ((row to col) in leftoverCells) cell.copy(ammoColor = AmmoColor.NONE) else cell
+                }
+            }
+        }
+
+        return GridMatchResolution(currentGrid, allGroups, cascades)
+    }
+
+    private fun randomAmmo(random: Random): AmmoColor {
+        val roll = random.nextInt(100)
+        return when {
+            roll < 30 -> AmmoColor.RED
+            roll < 60 -> AmmoColor.BLUE
+            roll < 90 -> AmmoColor.YELLOW
+            else -> AmmoColor.GREEN_HEAL
+        }
+    }
+}
