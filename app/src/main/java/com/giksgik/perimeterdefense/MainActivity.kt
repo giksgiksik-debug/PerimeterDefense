@@ -144,7 +144,7 @@ private fun loadArt(context: android.content.Context, path: String): ImageBitmap
         Header(g)
         Spacer(Modifier.height(5.dp))
         Box(Modifier.fillMaxWidth().weight(1.12f).border(2.dp,Color(0xFF9A774A),RoundedCornerShape(12.dp)).background(Color(0xFF253D36),RoundedCornerShape(12.dp))) {
-            Canvas(Modifier.fillMaxSize()) { drawBattlefield(g) }
+            Canvas(Modifier.fillMaxSize()) { drawBattlefield(g, art) }
             Row(Modifier.align(Alignment.TopStart).padding(7.dp), verticalAlignment=Alignment.CenterVertically) {
                 SmallTag("ЛЕСНОЙ ПЕРЕВАЛ")
                 Spacer(Modifier.width(6.dp)); SmallTag("ВОЛНА ${g.wave}/15")
