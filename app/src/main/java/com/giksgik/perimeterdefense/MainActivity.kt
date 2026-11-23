@@ -222,16 +222,16 @@ private fun loadArt(context: android.content.Context, path: String): ImageBitmap
     }
 }
 @Composable private fun Gem(type:Int,selected:Boolean,modifier:Modifier,onClick:()->Unit) {
-    val safe=type.coerceIn(0,4); val color=Gems[safe]
+    val context=LocalContext.current
+    val names=listOf("blue.png","red.png","purple.png","green.png","yellow.png")
+    val image= remember(type) {
+        runCatching { context.assets.open("game_art/sprites/gems/${names[type.coerceIn(0,4)]}").use { BitmapFactory.decodeStream(it).asImageBitmap() } }.getOrNull()
+    }
     Box(modifier.clickable { onClick() }.background(Brush.verticalGradient(listOf(Color(0xFF46516A),Color(0xFF171D2C))),RoundedCornerShape(7.dp)).border(if(selected) 2.dp else 1.dp,if(selected) Color.White else Color(0xFF66738D),RoundedCornerShape(7.dp)).padding(2.dp),contentAlignment=Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            val w=size.width; val h=size.height
-            val p=Path().apply { moveTo(w*.5f,h*.06f);lineTo(w*.91f,h*.35f);lineTo(w*.78f,h*.86f);lineTo(w*.5f,h*.97f);lineTo(w*.22f,h*.86f);lineTo(w*.09f,h*.35f);close() }
-            drawPath(p,Brush.linearGradient(listOf(color.copy(alpha=.72f),color,color.copy(alpha=.65f))))
-            drawPath(Path().apply { moveTo(w*.5f,h*.06f);lineTo(w*.5f,h*.49f);lineTo(w*.09f,h*.35f);close() },Color.White.copy(alpha=.3f))
-            drawPath(Path().apply { moveTo(w*.5f,h*.49f);lineTo(w*.91f,h*.35f);lineTo(w*.78f,h*.86f);close() },Color.Black.copy(alpha=.18f))
-            drawLine(Color.White.copy(alpha=.7f),Offset(w*.22f,h*.29f),Offset(w*.42f,h*.16f),2f)
-            drawCircle(color.copy(alpha=.3f),w*.12f,Offset(w*.5f,h*.52f))
+            image?.let { drawImage(it, dstSize=androidx.compose.ui.unit.IntSize(size.width.toInt(),size.height.toInt())) }
+                ?: drawCircle(Gems[type.coerceIn(0,4)],size.minDimension*.34f)
+            if(selected) drawCircle(Color.White.copy(alpha=.85f),size.minDimension*.46f,style=Stroke(width=3.dp.toPx()))
         }
     }
 }
