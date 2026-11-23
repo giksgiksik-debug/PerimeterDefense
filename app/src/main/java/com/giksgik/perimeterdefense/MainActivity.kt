@@ -174,7 +174,7 @@ class MainActivity:ComponentActivity() {
 }
 @Composable private fun TowerChoice(g:GameState,id:Int,icon:String,name:String,cost:String,tint:Color) {
     val chosen=g.selectedTower==id
-    Column(Modifier.weight(1f).fillMaxWidth().clickable { g.selectedTower=id }.background(if(chosen) tint.copy(alpha=.20f) else Color(0xFF252D40),RoundedCornerShape(7.dp)).border(if(chosen) 2.dp else 1.dp,if(chosen) tint else Color(0xFF536078),RoundedCornerShape(7.dp)).padding(3.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
+    Column(Modifier.height(47.dp).fillMaxWidth().clickable { g.selectedTower=id }.background(if(chosen) tint.copy(alpha=.20f) else Color(0xFF252D40),RoundedCornerShape(7.dp)).border(if(chosen) 2.dp else 1.dp,if(chosen) tint else Color(0xFF536078),RoundedCornerShape(7.dp)).padding(3.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
         Text(icon,fontSize=19.sp); Text(name,color=Color.White,fontSize=9.sp,fontWeight=FontWeight.Bold); Text("◉ $cost",color=Gold,fontSize=9.sp,fontWeight=FontWeight.Black)
     }
 }
@@ -244,7 +244,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBattlefield(g:G
     drawPath(river,Color(0xFFB0F4E9).copy(alpha=.65f),style=Stroke(h*.012f,cap=StrokeCap.Round))
     // winding stone road with dark edge, cobble seams
     val road=Path().apply { moveTo(-w*.02f,h*.50f);cubicTo(w*.13f,h*.30f,w*.27f,h*.30f,w*.36f,h*.49f);cubicTo(w*.47f,h*.74f,w*.58f,h*.65f,w*.61f,h*.42f);cubicTo(w*.64f,h*.18f,w*.77f,h*.22f,w*.84f,h*.43f);cubicTo(w*.9f,h*.62f,w*.94f,h*.56f,w*1.02f,h*.38f) }
-    drawPath(road,Color(0xFF423C3B),style=Stroke(h*.205f,cap=StrokeCap.Round,join=PathEffect.cornerPathEffect(h*.05f)))
+    drawPath(road,Color(0xFF423C3B),style=Stroke(width=h*.205f,cap=StrokeCap.Round,join=StrokeJoin.Round))
     drawPath(road,Brush.linearGradient(listOf(Color(0xFFD9C39A),Color(0xFF9F896A),Color(0xFFE0CDA7))),style=Stroke(h*.17f,cap=StrokeCap.Round))
     drawPath(road,Color(0xFF75644F).copy(alpha=.6f),style=Stroke(h*.006f))
     // stone bridge
