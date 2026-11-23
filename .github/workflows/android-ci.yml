@@ -26,6 +26,10 @@ jobs:
           unzip -o app/src/main/assets/PerimeterDefense_ForestPass_ArtPack_v2.zip -d app/src/main/assets/game_art
           echo "=== FOREST PASS ART FILES ==="
           find app/src/main/assets/game_art -type f -printf '%P (%s bytes)\\n' | sort
+          echo "=== MAP MANIFEST ==="
+          cat app/src/main/assets/game_art/map_manifest.json
+          echo "=== ART README ==="
+          cat app/src/main/assets/game_art/README_RU.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
