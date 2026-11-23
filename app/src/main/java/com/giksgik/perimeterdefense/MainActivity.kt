@@ -1,6 +1,7 @@
 package com.giksgik.perimeterdefense
 
 import android.content.pm.ActivityInfo
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -104,8 +107,33 @@ class MainActivity:ComponentActivity() {
     }
 }
 
+private fun loadArt(context: android.content.Context, path: String): ImageBitmap? = runCatching {
+    context.assets.open("game_art/$path").use { BitmapFactory.decodeStream(it).asImageBitmap() }
+}.getOrNull()
+
 @Composable private fun GameScreen() {
     val g= remember { GameState() }
+    val context = LocalContext.current
+    val art = remember {
+        mapOf(
+            "background" to loadArt(context, "background/forest_pass_background.webp"),
+            "road" to loadArt(context, "layers/road_overlay.png"),
+            "bridge" to loadArt(context, "layers/stone_bridge.png"),
+            "pad1" to loadArt(context, "layers/build_pad_1.png"),
+            "pad2" to loadArt(context, "layers/build_pad_2.png"),
+            "pad3" to loadArt(context, "layers/build_pad_3.png"),
+            "pad4" to loadArt(context, "layers/build_pad_4.png"),
+            "pad5" to loadArt(context, "layers/build_pad_5.png"),
+            "pad6" to loadArt(context, "layers/build_pad_6.png"),
+            "castle" to loadArt(context, "sprites/structures/castle_blue.png"),
+            "archer" to loadArt(context, "sprites/structures/tower_archer.png"),
+            "fire" to loadArt(context, "sprites/structures/tower_fire.png"),
+            "ice" to loadArt(context, "sprites/structures/tower_ice.png"),
+            "lightning" to loadArt(context, "sprites/structures/tower_lightning.png"),
+            "goblin" to loadArt(context, "sprites/structures/enemy_goblin.png"),
+            "brute" to loadArt(context, "sprites/structures/enemy_brute.png")
+        )
+    }
     LaunchedEffect(g) {
         var last=withFrameNanos { it }
         while(isActive) withFrameNanos { now ->
@@ -225,83 +253,37 @@ class MainActivity:ComponentActivity() {
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBattlefield(g:GameState) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBattlefield(g:GameState, art:Map<String,ImageBitmap?>) {
     val w=size.width; val h=size.height
-    drawRect(Brush.verticalGradient(listOf(Color(0xFF9CCB8A),Color(0xFF4E8555),Color(0xFF234C43))),size=Size(w,h))
-    // distant cliffs, mist and forest canopy
-    drawOval(Color(0xFFB5D4A0).copy(alpha=.35f),Offset(w*.22f,-h*.18f),Size(w*.58f,h*.62f))
-    for(i in 0..15) {
-        val x=w*(i/15f); val y=h*(.05f+(i%4)*.055f)
-        drawCircle(Color(0xFF173E37),h*.105f,Offset(x,y))
-        drawCircle(Color(0xFF286348),h*.083f,Offset(x-h*.018f,y-h*.02f))
-        drawCircle(Color(0xFF477E4A),h*.055f,Offset(x-h*.03f,y-h*.035f))
-        drawCircle(Color(0xFF8EBB5C).copy(alpha=.65f),h*.018f,Offset(x-h*.04f,y-h*.05f))
+    fun sprite(key:String, x:Float, y:Float, width:Float, height:Float) {
+        art[key]?.let { drawImage(it, dstOffset=androidx.compose.ui.unit.IntOffset(x.toInt(),y.toInt()), dstSize=androidx.compose.ui.unit.IntSize(width.toInt(),height.toInt())) }
     }
-    // river and falls
-    val river=Path().apply { moveTo(0f,h*.84f);cubicTo(w*.18f,h*.68f,w*.23f,h*.98f,w*.38f,h*.82f);cubicTo(w*.56f,h*.64f,w*.68f,h*.97f,w*.79f,h*.80f);lineTo(w,h*.72f) }
-    drawPath(river,Color(0xFF176F86),style=Stroke(h*.13f,cap=StrokeCap.Round))
-    drawPath(river,Color(0xFF59C9D8),style=Stroke(h*.075f,cap=StrokeCap.Round))
-    drawPath(river,Color(0xFFB0F4E9).copy(alpha=.65f),style=Stroke(h*.012f,cap=StrokeCap.Round))
-    // winding stone road with dark edge, cobble seams
-    val road=Path().apply { moveTo(-w*.02f,h*.50f);cubicTo(w*.13f,h*.30f,w*.27f,h*.30f,w*.36f,h*.49f);cubicTo(w*.47f,h*.74f,w*.58f,h*.65f,w*.61f,h*.42f);cubicTo(w*.64f,h*.18f,w*.77f,h*.22f,w*.84f,h*.43f);cubicTo(w*.9f,h*.62f,w*.94f,h*.56f,w*1.02f,h*.38f) }
-    drawPath(road,Color(0xFF423C3B),style=Stroke(width=h*.205f,cap=StrokeCap.Round,join=StrokeJoin.Round))
-    drawPath(road,Brush.linearGradient(listOf(Color(0xFFD9C39A),Color(0xFF9F896A),Color(0xFFE0CDA7))),style=Stroke(h*.17f,cap=StrokeCap.Round))
-    drawPath(road,Color(0xFF75644F).copy(alpha=.6f),style=Stroke(h*.006f))
-    // stone bridge
-    drawRoundRect(Color(0xFF665A4A),Offset(w*.34f,h*.69f),Size(w*.25f,h*.14f),androidx.compose.ui.geometry.CornerRadius(h*.04f))
-    drawRoundRect(Color(0xFFC3AC83),Offset(w*.35f,h*.68f),Size(w*.23f,h*.10f),androidx.compose.ui.geometry.CornerRadius(h*.035f))
-    for(i in 0..7) drawLine(Color(0xFF806F59),Offset(w*(.36f+i*.027f),h*.70f),Offset(w*(.36f+i*.027f),h*.77f),h*.004f)
-    // build pads
+    // 1. Painted forest background
+    art["background"]?.let { drawImage(it, dstSize=androidx.compose.ui.unit.IntSize(w.toInt(),h.toInt())) }
+        ?: drawRect(Color(0xFF315D45), size=Size(w,h))
+    // 2. Separate road and bridge overlays
+    sprite("road",0f,0f,w,h)
+    sprite("bridge",0f,0f,w,h)
+    // 3. Build pads and placed tower sprites
     val pads=listOf(.16f to .33f,.29f to .60f,.43f to .23f,.53f to .57f,.70f to .30f,.79f to .62f)
     pads.forEachIndexed { i,p ->
         val x=w*p.first; val y=h*p.second
-        drawOval(Color(0xFF102B25).copy(alpha=.45f),Offset(x-w*.045f,y-h*.018f),Size(w*.09f,h*.045f))
-        val pad=Path().apply { moveTo(x,y-h*.055f);lineTo(x+w*.052f,y);lineTo(x,y+h*.055f);lineTo(x-w*.052f,y);close() }
-        drawPath(pad,Color(0xFF8E7959));drawPath(pad,Color(0xFFE5C78A),style=Stroke(h*.008f))
-        drawCircle(Color(0xFFFFD77D).copy(alpha=.75f),h*.009f,Offset(x,y))
+        sprite("pad${i+1}",x-w*.055f,y-h*.075f,w*.11f,h*.15f)
         if(i<g.towers.size) {
-            val col=when(g.towers[i].kind){0->Color(0xFF5FAE58);1->Color(0xFFFF8143);2->Color(0xFF5DD5F4);else->Color(0xFFB58AFB)}
-            drawRoundRect(Color(0xFF5C4938),Offset(x-w*.025f,y-h*.12f),Size(w*.05f,h*.12f),androidx.compose.ui.geometry.CornerRadius(h*.015f))
-            drawCircle(col,h*.042f,Offset(x,y-h*.12f));drawCircle(Color.White.copy(alpha=.7f),h*.012f,Offset(x-h*.01f,y-h*.13f))
-        } else {
-            drawCircle(Color(0xFFFFD77D).copy(alpha=.45f),h*.018f,Offset(x,y))
+            val key=when(g.towers[i].kind){0->"archer";1->"fire";2->"ice";else->"lightning"}
+            sprite(key,x-w*.055f,y-h*.23f,w*.11f,h*.24f)
         }
     }
-    // enemy gate at left
-    val gx=w*.055f; val gy=h*.47f
-    drawRoundRect(Color(0xFF3E3336),Offset(gx-w*.05f,gy-h*.20f),Size(w*.10f,h*.35f),androidx.compose.ui.geometry.CornerRadius(h*.04f))
-    drawRoundRect(Brush.verticalGradient(listOf(Color(0xFFFF6A2D),Color(0xFF6E1027),Color(0xFF260D22))),Offset(gx-w*.035f,gy-h*.15f),Size(w*.07f,h*.27f),androidx.compose.ui.geometry.CornerRadius(h*.06f))
-    drawRoundRect(Color(0xFFFF9B43).copy(alpha=.7f),Offset(gx-w*.035f,gy-h*.15f),Size(w*.07f,h*.27f),androidx.compose.ui.geometry.CornerRadius(h*.06f),style=Stroke(h*.009f))
-    for(i in 0..2) drawCircle(Color(0xFFFFD36B),h*(.012f-i*.002f),Offset(gx-w*.026f+i*w*.026f,gy-h*.18f))
-    // destination castle right
-    val cx=w*.93f; val cy=h*.39f
-    drawRoundRect(Color(0xFF655D59),Offset(cx-w*.075f,cy-h*.20f),Size(w*.15f,h*.31f),androidx.compose.ui.geometry.CornerRadius(h*.025f))
-    drawRoundRect(Brush.linearGradient(listOf(Color(0xFFE6D4B4),Color(0xFF9B8A78))),Offset(cx-w*.065f,cy-h*.18f),Size(w*.13f,h*.27f),androidx.compose.ui.geometry.CornerRadius(h*.02f))
-    for(dx in listOf(-.06f,0f,.06f)) {
-        val tx=cx+w*dx
-        drawRect(Color(0xFFD9C7A7),Offset(tx-w*.021f,cy-h*.31f),Size(w*.042f,h*.18f))
-        drawRect(Color(0xFF3472B8),Offset(tx-w*.023f,cy-h*.32f),Size(w*.046f,h*.055f))
-        val roof=Path().apply { moveTo(tx-w*.03f,cy-h*.32f);lineTo(tx,cy-h*.43f);lineTo(tx+w*.03f,cy-h*.32f);close() }
-        drawPath(roof,Color(0xFF1F5EA5))
-        drawLine(Gold,Offset(tx,cy-h*.43f),Offset(tx,cy-h*.48f),h*.005f)
-    }
-    drawRoundRect(Color(0xFF352B2C),Offset(cx-w*.015f,cy-h*.04f),Size(w*.03f,h*.13f),androidx.compose.ui.geometry.CornerRadius(h*.02f))
-    // monsters move along the route, with shadow and health
+    // 4. Castle destination
+    sprite("castle",w*.835f,h*.12f,w*.16f,h*.48f)
+    // 5. Moving enemy sprites
     g.enemies.forEach { e ->
         val t=e.progress.coerceIn(0f,1f)
         val x=w*(.06f+.86f*t)
         val y=when {t<.22f->h*(.50f-.20f*t);t<.42f->h*(.456f+.60f*(t-.22f));t<.65f->h*(.576f-.95f*(t-.42f));t<.83f->h*(.357f+.15f*(t-.65f));else->h*(.384f-.15f*(t-.83f))}
-        val c=when(e.kind){0->Color(0xFF77B84F);1->Color(0xFF9D6749);2->Color(0xFFCBD2D5);3->Color(0xFF7553A8);else->Color(0xFF8E3945)}
-        drawOval(Color.Black.copy(alpha=.5f),Offset(x-w*.017f,y+h*.018f),Size(w*.034f,h*.025f))
-        drawRoundRect(c,Offset(x-w*.013f,y-h*.025f),Size(w*.026f,h*.055f),androidx.compose.ui.geometry.CornerRadius(h*.012f))
-        drawCircle(c,h*.021f,Offset(x,y-h*.03f))
-        drawCircle(Color(0xFFFFE9A4),h*.004f,Offset(x-w*.007f,y-h*.034f));drawCircle(Color(0xFFFFE9A4),h*.004f,Offset(x+w*.007f,y-h*.034f))
-        drawRoundRect(Color(0xFF351E28),Offset(x-w*.021f,y-h*.07f),Size(w*.042f,h*.009f),androidx.compose.ui.geometry.CornerRadius(h*.005f))
-        drawRoundRect(Color(0xFFE34F57),Offset(x-w*.021f,y-h*.07f),Size(w*.042f*(e.hp.toFloat()/(35+g.wave*8)).coerceIn(0f,1f),h*.009f),androidx.compose.ui.geometry.CornerRadius(h*.005f))
-    }
-    // foreground grass sparkles
-    for(i in 0..28) {
-        val x=w*((i*31%97)/100f); val y=h*(.72f+(i*17%24)/100f)
-        drawCircle(if(i%3==0) Color(0xFFFFE9A3) else Color(0xFFB4E5A2).copy(alpha=.7f),h*.003f,Offset(x,y))
+        val key=if(e.kind%3==0) "brute" else "goblin"
+        sprite(key,x-w*.035f,y-h*.13f,w*.07f,h*.15f)
+        drawRoundRect(Color(0xFF351E28),Offset(x-w*.025f,y-h*.15f),Size(w*.05f,h*.009f),androidx.compose.ui.geometry.CornerRadius(h*.005f))
+        drawRoundRect(Color(0xFFE34F57),Offset(x-w*.025f,y-h*.15f),Size(w*.05f*(e.hp.toFloat()/(35+g.wave*8)).coerceIn(0f,1f),h*.009f),androidx.compose.ui.geometry.CornerRadius(h*.005f))
     }
 }
