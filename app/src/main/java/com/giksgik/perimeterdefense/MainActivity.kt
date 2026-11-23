@@ -198,7 +198,7 @@ private fun buyTower(g: GameState, cost: Int, damage: Int, cooldown: Float, kind
     }
 }
 
-private fun drawFantasyMap(game: GameState) {
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFantasyMap(game: GameState) {
     val w=size.width; val h=size.height
     drawRect(Brush.verticalGradient(listOf(Color(0xFF53734B), Color(0xFF243E36))), size=Size(w,h))
     // layered isometric hills and forest canopy
