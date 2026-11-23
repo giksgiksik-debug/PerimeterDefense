@@ -20,6 +20,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Extract Forest Pass art pack
+        run: |
+          mkdir -p app/src/main/assets/game_art
+          unzip -o app/src/main/assets/PerimeterDefense_ForestPass_ArtPack_v2.zip -d app/src/main/assets/game_art
+          echo "=== FOREST PASS ART FILES ==="
+          find app/src/main/assets/game_art -type f -printf '%P (%s bytes)\\n' | sort
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
